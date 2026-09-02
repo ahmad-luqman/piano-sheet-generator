@@ -89,9 +89,10 @@ export class Player {
     void this.audio.start();
     this.playing = true;
     this.lastTickTime = performance.now();
+    if (this.countInBeats > 0) this.position -= this.countInBeats;
+    // Scheduling starts from the (possibly negative) count-in position so the clicks are heard.
     this.scheduledUpTo = this.position;
     this.nextClickBeat = Math.ceil(this.position - 1e-6);
-    if (this.countInBeats > 0) this.position -= this.countInBeats;
     this.timer = window.setInterval(() => this.tick(), 20);
     this.cb.onStateChange?.(true);
   }
