@@ -1,0 +1,432 @@
+import type { Arrangement, Hand, Level, LevelId, Note, Song } from '../types';
+import { LEVEL_META } from '../types';
+import { buildArrangement } from '../arrange';
+import { parseMidi } from '../midi/parse';
+import { CATALOG, findCatalog, loadCatalogSong } from '../catalog/songs';
+import { downloadMidi, searchBitmidi, type SearchResult } from '../search/bitmidi';
+import { BeginnerSheet } from '../sheet/beginner';
+import { AdvancedSheet } from '../sheet/advanced';
+import { generateSteps, type Step } from '../sheet/steps';
+import { createPiano, type PianoView } from '../piano';
+import { AudioEngine } from '../audio/engine';
+import { InputBus } from '../input/bus';
+import { ComputerKeyboard } from '../input/keyboard';
+import { WebMidiInput } from '../input/webmidi';
+import { Player, type Hands, type PlayMode } from '../practice/player';
+import { enrichSteps, getApiKey, setApiKey, suggestSearchTerms } from '../llm/claude';
+
+const $ = <T extends HTMLElement>(sel: string): T => {
+  const el = document.querySelector<T>(sel);
+  if (!el) throw new Error(`Missing element ${sel}`);
+  return el;
+};
+
+export class App {
+  private song: Song | null = null;
+  private arr: Arrangement | null = null;
+  private levelId: LevelId = 1;
+  private sheetTab: 'beginner' | 'advanced' = 'beginner';
+  private steps: Step[] = [];
+  private currentStep = -1;
+
+  private bus = new InputBus();
+  private audio = new AudioEngine();
+  private piano: PianoView;
+  private beginner: BeginnerSheet;
+  private advanced: AdvancedSheet;
+  private player: Player;
+  private keyboard: ComputerKeyboard;
+  private midi: WebMidiInput;
+  private searchAbort: AbortController | null = null;
+  private lastFeedbackTimers = new Map<number, number>();
+
+  constructor(_root: HTMLElement) {
+    this.piano = createPiano($('#piano'));
+    this.beginner = new BeginnerSheet($('#sheet-beginner'));
+    this.advanced = new AdvancedSheet($('#sheet-advanced'));
+    this.player = new Player(this.audio, this.bus, {
+      onPosition: (b) => this.onPosition(b),
+      onWaiting: (req) => this.onWaiting(req),
+      onFeedback: (midi, ok) => this.onFeedback(midi, ok),
+      onStateChange: (playing) => { $('#btn-play').textContent = playing ? '❚❚ Pause' : '▶ Play'; },
+      onEnd: () => this.toast('End of piece. Nice work!'),
+    });
+    this.keyboard = new ComputerKeyboard(this.bus, (t) => t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement);
+    this.midi = new WebMidiInput(this.bus);
+
+    this.wireBus();
+    this.wireUi();
+    this.refreshKeyLabels();
+    this.audio.onState = (s) => { $('#status').textContent = s === 'loading' ? 'Loading piano samples…' : s === 'sampler' ? 'Sampled grand piano ready' : s === 'synth' ? 'Synth piano (samples unavailable)' : ''; };
+
+    if (this.piano.kind === '2d') this.toast('WebGL is unavailable, showing a 2D keyboard.');
+    this.loadSong(loadCatalogSong(CATALOG[0]));
+    $('#overlay-audio').hidden = false;
+  }
+
+  // ───────────────────────── wiring ─────────────────────────
+
+  private wireBus(): void {
+    this.bus.on((ev, on) => {
+      if (ev.source === 'playback') {
+        const hand = this.handAt(ev.midi, this.player.beat);
+        this.piano.setKeyState(ev.midi, on ? 'playback' : 'off', hand);
+        return;
+      }
+      // Human input: sound + green key.
+      if (on) this.audio.noteOn(ev.midi, ev.velocity); else this.audio.noteOff(ev.midi);
+      if (on) this.piano.setKeyState(ev.midi, 'user');
+      else this.piano.setKeyState(ev.midi, this.bus.playbackHeld.has(ev.midi) ? 'playback' : 'off', this.handAt(ev.midi, this.player.beat));
+    });
+    this.piano.onKeyPress = (m) => { void this.ensureAudio(); this.bus.noteOn(m, 0.8, 'pointer'); };
+    this.piano.onKeyRelease = (m) => this.bus.noteOff(m, 'pointer');
+    this.keyboard.onOctaveChange = () => this.refreshKeyLabels();
+    this.keyboard.onSustain = (down) => this.audio.setSustain(down);
+  }
+
+  private wireUi(): void {
+    $('#btn-enable-audio').addEventListener('click', async () => { $('#overlay-audio').hidden = true; await this.ensureAudio(); });
+    $('#overlay-audio').addEventListener('click', (e) => { if (e.target === e.currentTarget) { $('#overlay-audio').hidden = true; void this.ensureAudio(); } });
+
+    $<HTMLFormElement>('#search-form').addEventListener('submit', (e) => { e.preventDefault(); void this.search($<HTMLInputElement>('#search-input').value); });
+    $('#btn-catalog').addEventListener('click', () => this.showResults(CATALOG.map(catalogResult), '', true));
+    $<HTMLInputElement>('#file-input').addEventListener('change', async (e) => {
+      const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return;
+      try { this.loadSong(parseMidi(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, ''), 'upload')); } catch (err) { this.toast(`Could not read that file: ${msg(err)}`, true); }
+      (e.target as HTMLInputElement).value = '';
+    });
+    $('#btn-url').addEventListener('click', () => $<HTMLDialogElement>('#dlg-url').showModal());
+    $<HTMLDialogElement>('#dlg-url').addEventListener('close', () => {
+      const dlg = $<HTMLDialogElement>('#dlg-url');
+      if (dlg.returnValue !== 'ok') return;
+      const url = $<HTMLInputElement>('#url-input').value.trim();
+      if (url) void this.loadFromUrl(url, url.split('/').pop() ?? 'MIDI');
+    });
+    document.addEventListener('click', (e) => { if (!(e.target as HTMLElement).closest('#results, #search-form')) $('#results').hidden = true; });
+
+    const picker = $('#level-picker');
+    for (const id of [1, 2, 3, 4] as LevelId[]) {
+      const b = document.createElement('button');
+      b.innerHTML = `<b>${id}</b><span>${LEVEL_META[id].name}</span>`;
+      b.title = LEVEL_META[id].description;
+      b.addEventListener('click', () => this.setLevel(id));
+      b.dataset.level = String(id);
+      picker.appendChild(b);
+    }
+    document.querySelectorAll<HTMLButtonElement>('.sheet-tabs .tab').forEach((t) => t.addEventListener('click', () => this.setSheetTab(t.dataset.sheet as 'beginner' | 'advanced')));
+
+    $('#btn-play').addEventListener('click', () => this.togglePlay());
+    $('#btn-stop').addEventListener('click', () => this.player.stop());
+    document.querySelectorAll<HTMLButtonElement>('#mode-seg .seg-btn').forEach((b) => b.addEventListener('click', () => this.setMode(b.dataset.mode as PlayMode)));
+    document.querySelectorAll<HTMLButtonElement>('#hands-seg .seg-btn').forEach((b) => b.addEventListener('click', () => this.setHands(b.dataset.hands as Hands)));
+    const tempo = $<HTMLInputElement>('#tempo');
+    tempo.addEventListener('input', () => this.setTempo(parseInt(tempo.value, 10) / 100));
+    $('#btn-loop').addEventListener('click', () => this.toggleLoop());
+    $('#btn-metro').addEventListener('click', () => { this.player.metronome = !this.player.metronome; $('#btn-metro').classList.toggle('active', this.player.metronome); });
+    $('#btn-reset-view').addEventListener('click', () => this.piano.resetView());
+
+    const devices = $<HTMLSelectElement>('#midi-devices');
+    devices.addEventListener('focus', () => void this.connectMidi());
+    devices.addEventListener('change', () => this.midi.select(devices.value || null));
+    if (!this.midi.supported) { devices.disabled = true; devices.title = 'Web MIDI is not supported in this browser'; }
+    this.midi.onDevicesChanged = () => this.fillDevices();
+
+    $('#btn-settings').addEventListener('click', () => {
+      $<HTMLInputElement>('#api-key').value = getApiKey() ?? '';
+      $<HTMLDialogElement>('#dlg-settings').showModal();
+    });
+    $<HTMLInputElement>('#api-key').addEventListener('change', (e) => setApiKey((e.target as HTMLInputElement).value.trim() || null));
+    $<HTMLInputElement>('#opt-fingers').addEventListener('change', (e) => this.beginner.setOptions({ showFingers: (e.target as HTMLInputElement).checked }));
+    $<HTMLInputElement>('#opt-octaves').addEventListener('change', (e) => this.beginner.setOptions({ showOctaves: (e.target as HTMLInputElement).checked }));
+    $<HTMLInputElement>('#opt-labels').addEventListener('change', (e) => this.piano.setShowLabels((e.target as HTMLInputElement).checked));
+    $<HTMLInputElement>('#opt-countin').addEventListener('change', (e) => { this.player.countInBeats = (e.target as HTMLInputElement).checked ? (this.arr?.beatsPerBar ?? 4) : 0; });
+    $<HTMLInputElement>('#volume').addEventListener('input', (e) => this.audio.setVolumeDb(parseInt((e.target as HTMLInputElement).value, 10)));
+    $('#btn-enrich').addEventListener('click', () => void this.coach());
+
+    $<HTMLSelectElement>('#melody-track').addEventListener('change', (e) => {
+      if (!this.song) return;
+      this.arrange(parseInt((e.target as HTMLSelectElement).value, 10));
+    });
+
+    window.addEventListener('keydown', (e) => {
+      const t = e.target as HTMLElement;
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return;
+      if (e.code === 'Enter') { e.preventDefault(); this.togglePlay(); }
+      if (e.code === 'Escape') { this.player.stop(); }
+    });
+  }
+
+  // ───────────────────────── song loading ─────────────────────────
+
+  private async search(query: string): Promise<void> {
+    const q = query.trim();
+    if (!q) return;
+    this.searchAbort?.abort();
+    const ac = new AbortController(); this.searchAbort = ac;
+    const local = findCatalog(q).map(catalogResult);
+    this.showResults(local, q, false, 'Searching bitmidi.com…');
+    try {
+      const remote = await searchBitmidi(q, 0, ac.signal);
+      if (ac.signal.aborted) return;
+      this.showResults([...local, ...remote], q, true);
+      if (remote.length === 0 && local.length === 0 && getApiKey()) {
+        const sugg = await suggestSearchTerms(q).catch(() => []);
+        if (sugg.length) this.showSuggestions(sugg);
+      }
+    } catch (err) {
+      if (ac.signal.aborted) return;
+      this.showResults(local, q, true, `Internet search failed (${msg(err)}). Built-in matches shown.`);
+    }
+  }
+
+  private showResults(items: SearchResult[], q: string, done: boolean, note?: string): void {
+    const box = $('#results');
+    box.innerHTML = '';
+    const head = document.createElement('div'); head.className = 'res-head';
+    head.innerHTML = `<span>${items.length} result${items.length === 1 ? '' : 's'}${q ? ` for “${esc(q)}”` : ''}${note ? ` · ${esc(note)}` : ''}</span><button class="btn small">Close</button>`;
+    head.querySelector('button')!.addEventListener('click', () => { box.hidden = true; });
+    box.appendChild(head);
+    if (items.length === 0 && done) { const e = document.createElement('div'); e.className = 'res-empty'; e.textContent = 'Nothing found. Try the original title, the composer, or fewer words.'; box.appendChild(e); }
+    for (const r of items) {
+      const el = document.createElement('div'); el.className = 'res-item';
+      el.innerHTML = `<span class="tag ${r.source}">${r.source === 'catalog' ? 'built-in' : 'bitmidi'}</span><span class="name">${esc(r.name)}</span>${r.views ? `<span class="muted small">${r.views.toLocaleString()} views</span>` : ''}`;
+      el.addEventListener('click', () => { box.hidden = true; void this.pick(r); });
+      box.appendChild(el);
+    }
+    box.hidden = false;
+  }
+
+  private showSuggestions(terms: string[]): void {
+    const box = $('#results');
+    const wrap = document.createElement('div'); wrap.className = 'res-sugg';
+    wrap.innerHTML = '<span class="muted small">Claude suggests trying:</span>';
+    for (const t of terms) { const b = document.createElement('button'); b.className = 'btn small'; b.textContent = t; b.addEventListener('click', () => { $<HTMLInputElement>('#search-input').value = t; void this.search(t); }); wrap.appendChild(b); }
+    box.appendChild(wrap);
+  }
+
+  private async pick(r: SearchResult): Promise<void> {
+    if (r.source === 'catalog') { const entry = CATALOG.find((c) => c.id === r.id)!; this.loadSong(loadCatalogSong(entry)); return; }
+    await this.loadFromUrl(r.downloadUrl, r.name);
+  }
+
+  private async loadFromUrl(url: string, title: string): Promise<void> {
+    this.toast(`Downloading “${title}”…`);
+    try {
+      const buf = await downloadMidi(url);
+      this.loadSong(parseMidi(buf, title, url.includes('bitmidi') ? 'bitmidi' : 'url'));
+    } catch (err) { this.toast(`Could not load: ${msg(err)}`, true); }
+  }
+
+  private loadSong(song: Song): void {
+    this.player.pause();
+    this.song = song;
+    if (song.notes.length === 0) { this.toast('That file has no notes.', true); return; }
+    const sel = $<HTMLSelectElement>('#melody-track');
+    sel.innerHTML = '';
+    for (const t of song.tracks) { const o = document.createElement('option'); o.value = String(t.index); o.textContent = `${t.name} (${t.noteCount} notes)`; sel.appendChild(o); }
+    this.arrange();
+    this.toast(`Loaded “${song.title}”. ${song.tracks.length} track${song.tracks.length === 1 ? '' : 's'}, ${this.arr!.totalBars} bars.`);
+  }
+
+  private arrange(melodyTrack?: number): void {
+    if (!this.song) return;
+    try {
+      this.arr = buildArrangement(this.song, { melodyTrack });
+    } catch (err) { this.toast(`Could not arrange: ${msg(err)}`, true); return; }
+    $<HTMLSelectElement>('#melody-track').value = String(this.arr.melodyTrack);
+    $('#song-title').textContent = this.arr.title;
+    $('#song-info').textContent = `${this.arr.key.name} · ${this.arr.bpm} bpm · ${this.arr.timeSig.num}/${this.arr.timeSig.den} · ${this.arr.totalBars} bars · ${this.song.source}`;
+    this.setLevel(this.levelId, true);
+  }
+
+  // ───────────────────────── level / views ─────────────────────────
+
+  private get level(): Level | null { return this.arr ? this.arr.levels[this.levelId] : null; }
+
+  private setLevel(id: LevelId, force = false): void {
+    if (!this.arr) return;
+    if (!force && id === this.levelId) return;
+    const wasPlaying = this.player.isPlaying;
+    const beat = this.player.beat;
+    this.player.pause();
+    this.levelId = id;
+    document.querySelectorAll<HTMLButtonElement>('#level-picker button').forEach((b) => b.classList.toggle('active', b.dataset.level === String(id)));
+    const level = this.level!;
+    this.beginner.render(this.arr, level);
+    this.beginner.onSeek = (b) => this.seek(b);
+    this.advanced.onSeek = (b) => this.seek(b);
+    if (this.sheetTab === 'advanced') this.advanced.render(this.arr, level); else this.advancedDirty = true;
+    this.piano.setNotes(level.notes);
+    this.player.load(level, this.arr.bpm, this.arr.beatsPerBar);
+    this.player.seek(Math.min(beat, this.player.duration));
+    if (this.player.countInBeats) this.player.countInBeats = this.arr.beatsPerBar;
+    this.renderSteps();
+    if (wasPlaying) this.player.play();
+  }
+
+  private advancedDirty = true;
+  private setSheetTab(tab: 'beginner' | 'advanced'): void {
+    this.sheetTab = tab;
+    document.querySelectorAll<HTMLButtonElement>('.sheet-tabs .tab').forEach((t) => t.classList.toggle('active', t.dataset.sheet === tab));
+    $('#sheet-beginner').hidden = tab !== 'beginner';
+    $('#sheet-advanced').hidden = tab !== 'advanced';
+    if (tab === 'advanced' && this.arr && this.level && this.advancedDirty) { this.advanced.render(this.arr, this.level); this.advancedDirty = false; }
+    this.onPosition(this.player.beat);
+  }
+
+  private renderSteps(): void {
+    if (!this.arr) return;
+    this.steps = generateSteps(this.arr, this.levelId);
+    this.paintSteps();
+  }
+
+  private paintSteps(): void {
+    const ol = $('#steps');
+    ol.innerHTML = '';
+    this.steps.forEach((s, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<h3>${esc(s.title)}</h3><p>${esc(s.body)}</p>`;
+      if (s.action) {
+        const b = document.createElement('button'); b.className = 'btn small primary';
+        b.textContent = s.action.mode === 'listen' ? '▶ Listen' : '▶ Practise this';
+        b.addEventListener('click', () => this.runStep(i));
+        li.appendChild(b);
+      }
+      li.classList.toggle('current', i === this.currentStep);
+      ol.appendChild(li);
+    });
+  }
+
+  private runStep(i: number): void {
+    const s = this.steps[i];
+    if (!s.action || !this.arr) return;
+    this.currentStep = i;
+    document.querySelectorAll('#steps li').forEach((li, j) => li.classList.toggle('current', j === i));
+    const a = s.action;
+    this.player.pause();
+    if (a.level !== this.levelId) this.setLevel(a.level);
+    this.setMode(a.mode);
+    this.setHands(a.hands);
+    this.setTempo(a.tempoScale);
+    if (a.startBar === 0 && a.endBar >= this.arr.totalBars - 1) { this.player.clearLoop(); this.beginner.highlightBars(0, 0, false); $('#btn-loop').classList.remove('active'); }
+    else { this.player.setLoop(a.startBar, a.endBar); this.beginner.highlightBars(a.startBar, a.endBar, true); $('#btn-loop').classList.add('active'); }
+    this.player.seek(a.startBar * this.arr.beatsPerBar);
+    void this.ensureAudio().then(() => this.player.play());
+  }
+
+  private async coach(): Promise<void> {
+    if (!this.arr) return;
+    if (!getApiKey()) { this.toast('Add your Anthropic API key in Settings (⚙) to use coaching.', true); $<HTMLDialogElement>('#dlg-settings').showModal(); return; }
+    const btn = $<HTMLButtonElement>('#btn-enrich');
+    btn.disabled = true; btn.textContent = '✨ Thinking…';
+    try {
+      this.steps = await enrichSteps(this.arr, this.levelId, this.steps);
+      this.paintSteps();
+      this.toast('Steps rewritten by Claude.');
+    } catch (err) { this.toast(`Coaching failed: ${msg(err)}`, true); }
+    finally { btn.disabled = false; btn.textContent = '✨ Coach me'; }
+  }
+
+  // ───────────────────────── transport ─────────────────────────
+
+  private async ensureAudio(): Promise<void> {
+    if (!this.audio.ready) await this.audio.start();
+  }
+
+  private togglePlay(): void {
+    if (this.player.isPlaying) { this.player.pause(); return; }
+    void this.ensureAudio().then(() => this.player.play());
+  }
+
+  private seek(beat: number): void {
+    this.player.seek(beat);
+  }
+
+  private setMode(m: PlayMode): void {
+    this.player.setMode(m);
+    document.querySelectorAll<HTMLButtonElement>('#mode-seg .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
+    if (m === 'listen') { this.piano.setHints(null); this.beginner.setRequired(null); }
+  }
+
+  private setHands(h: Hands): void {
+    this.player.setHands(h);
+    document.querySelectorAll<HTMLButtonElement>('#hands-seg .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.hands === h));
+  }
+
+  private setTempo(scale: number): void {
+    this.player.tempoScale = scale;
+    $<HTMLInputElement>('#tempo').value = String(Math.round(scale * 100));
+    $('#tempo-label').textContent = `${Math.round(scale * 100)}%`;
+  }
+
+  private toggleLoop(): void {
+    if (!this.arr) return;
+    if (this.player.loop) { this.player.clearLoop(); this.beginner.highlightBars(0, 0, false); $('#btn-loop').classList.remove('active'); return; }
+    const bar = Math.floor(this.player.beat / this.arr.beatsPerBar);
+    const start = Math.floor(bar / 4) * 4, end = Math.min(this.arr.totalBars - 1, start + 3);
+    this.player.setLoop(start, end);
+    this.beginner.highlightBars(start, end, true);
+    $('#btn-loop').classList.add('active');
+  }
+
+  private onPosition(beat: number): void {
+    this.piano.setPosition(beat);
+    if (this.sheetTab === 'beginner') this.beginner.setPosition(beat); else this.advanced.setPosition(beat);
+  }
+
+  private onWaiting(required: Note[] | null): void {
+    this.piano.setHints(required);
+    this.beginner.setRequired(required);
+    $('#status').textContent = required ? `Play: ${required.map((n) => `${n.letter}${n.octave}`).join(' + ')}` : '';
+  }
+
+  private onFeedback(midi: number, correct: boolean): void {
+    if (correct) return;
+    this.piano.setKeyState(midi, 'wrong');
+    const prev = this.lastFeedbackTimers.get(midi); if (prev) clearTimeout(prev);
+    this.lastFeedbackTimers.set(midi, window.setTimeout(() => this.piano.setKeyState(midi, this.bus.held.has(midi) ? 'user' : 'off'), 350));
+  }
+
+  private handAt(midi: number, beat: number): Hand | undefined {
+    const lvl = this.level; if (!lvl) return undefined;
+    const n = lvl.notes.find((x) => x.midi === midi && beat >= x.startBeat - 0.15 && beat < x.startBeat + x.durationBeats + 0.05);
+    return n?.hand;
+  }
+
+  // ───────────────────────── misc ─────────────────────────
+
+  private refreshKeyLabels(): void {
+    const labels = new Map<number, string>();
+    for (let m = 21; m <= 108; m++) { const l = this.keyboard.labelFor(m); if (l) labels.set(m, l); }
+    this.piano.setKeyLabels(labels);
+    $('#octave-badge').textContent = `Keys Z–/ start at C${Math.floor(this.keyboard.baseMidi / 12) - 1} · ←/→ to shift`;
+  }
+
+  private async connectMidi(): Promise<void> {
+    if (!this.midi.supported) return;
+    try { await this.midi.connect(); this.fillDevices(); } catch (err) { this.toast(msg(err), true); }
+  }
+
+  private fillDevices(): void {
+    const sel = $<HTMLSelectElement>('#midi-devices');
+    const devices = this.midi.devices();
+    sel.innerHTML = `<option value="">${devices.length ? 'MIDI keyboard…' : 'No MIDI devices found'}</option>`;
+    for (const d of devices) { const o = document.createElement('option'); o.value = d.id; o.textContent = d.name; sel.appendChild(o); }
+    if (this.midi.activeId) sel.value = this.midi.activeId;
+  }
+
+  private toastTimer = 0;
+  private toast(text: string, error = false): void {
+    const t = $('#toast');
+    t.textContent = text; t.classList.toggle('error', error); t.hidden = false;
+    clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => { t.hidden = true; }, error ? 6000 : 3500);
+    if (error) console.error(text);
+  }
+}
+
+function catalogResult(c: { id: string; title: string; composer: string }): SearchResult {
+  return { id: c.id, name: `${c.title} — ${c.composer}`, downloadUrl: '', source: 'catalog' };
+}
+function esc(s: string): string { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!)); }
+function msg(e: unknown): string { return e instanceof Error ? e.message : String(e); }

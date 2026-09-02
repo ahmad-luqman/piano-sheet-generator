@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Piano Sheet Generator</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎹</text></svg>" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">🎹 <span>Piano Sheet Generator</span></div>
+      <form id="search-form" class="search" autocomplete="off">
+        <input id="search-input" type="search" placeholder="Type a song name, e.g. Für Elise, Canon in D, Let It Be…" aria-label="Song name" />
+        <button type="submit" class="btn primary">Search</button>
+      </form>
+      <div class="top-actions">
+        <button id="btn-catalog" class="btn">Built-in songs</button>
+        <label class="btn" title="Open a .mid file from your computer">Upload .mid<input id="file-input" type="file" accept=".mid,.midi,audio/midi" hidden /></label>
+        <button id="btn-url" class="btn" title="Load a MIDI file from a URL">MIDI URL</button>
+        <button id="btn-settings" class="btn icon" title="Settings" aria-label="Settings">⚙</button>
+      </div>
+    </header>
+
+    <div id="results" class="results" hidden></div>
+
+    <main class="main">
+      <section class="workspace">
+        <div class="song-bar">
+          <div class="song-meta">
+            <h1 id="song-title">Loading…</h1>
+            <div id="song-info" class="muted"></div>
+          </div>
+          <div class="level-picker" id="level-picker" role="tablist" aria-label="Difficulty level"></div>
+          <div class="sheet-tabs">
+            <button class="tab active" data-sheet="beginner">Letter sheet</button>
+            <button class="tab" data-sheet="advanced">Standard notation</button>
+          </div>
+        </div>
+        <div id="sheet-beginner" class="sheet"></div>
+        <div id="sheet-advanced" class="sheet" hidden></div>
+        <div id="piano" class="piano">
+          <button id="btn-reset-view" class="btn small piano-float" title="Reset camera">⟲ view</button>
+          <div id="octave-badge" class="piano-float right muted"></div>
+        </div>
+        <div class="controls">
+          <div class="group">
+            <button id="btn-play" class="btn primary wide">▶ Play</button>
+            <button id="btn-stop" class="btn">■</button>
+          </div>
+          <div class="group seg" id="mode-seg">
+            <button class="seg-btn active" data-mode="listen" title="Auto-play, keys light up">Listen</button>
+            <button class="seg-btn" data-mode="practice" title="Waits for you to play each note">Practice</button>
+          </div>
+          <div class="group seg" id="hands-seg" title="Which hand(s) you play in Practice mode">
+            <button class="seg-btn active" data-hands="both">Both</button>
+            <button class="seg-btn" data-hands="rh">Right</button>
+            <button class="seg-btn" data-hands="lh">Left</button>
+          </div>
+          <label class="group tempo">Tempo <input id="tempo" type="range" min="25" max="150" value="100" /> <span id="tempo-label">100%</span></label>
+          <div class="group">
+            <button id="btn-loop" class="btn" title="Loop the current 4 bars">Loop bars</button>
+            <button id="btn-metro" class="btn" title="Metronome">Metronome</button>
+          </div>
+          <div class="group">
+            <select id="midi-devices" class="select" title="MIDI keyboard"><option value="">MIDI keyboard…</option></select>
+          </div>
+          <div id="status" class="status muted"></div>
+        </div>
+      </section>
+
+      <aside class="side">
+        <div class="side-head">
+          <h2>How to play</h2>
+          <button id="btn-enrich" class="btn small" title="Rewrite the steps with Claude (needs an API key in Settings)">✨ Coach me</button>
+        </div>
+        <ol id="steps" class="steps"></ol>
+        <details class="side-details">
+          <summary>Keyboard shortcuts</summary>
+          <ul class="shortcuts">
+            <li><kbd>Z</kbd>–<kbd>/</kbd> lower octave white keys, <kbd>S D G H J L ;</kbd> black keys</li>
+            <li><kbd>Q</kbd>–<kbd>P</kbd> upper octave white keys, <kbd>2 3 5 6 7 9 0</kbd> black keys</li>
+            <li><kbd>←</kbd> / <kbd>→</kbd> shift octave · <kbd>Space</kbd> sustain</li>
+            <li><kbd>Enter</kbd> play / pause · <kbd>Esc</kbd> stop</li>
+          </ul>
+        </details>
+        <details class="side-details">
+          <summary>Melody track</summary>
+          <p class="muted small">If the melody sounds wrong, pick the track that carries it.</p>
+          <select id="melody-track" class="select"></select>
+        </details>
+      </aside>
+    </main>
+
+    <div id="overlay-audio" class="overlay" hidden>
+      <div class="overlay-card">
+        <div class="big">🔊</div>
+        <p>Browsers only allow sound after a tap.</p>
+        <button id="btn-enable-audio" class="btn primary">Enable sound</button>
+      </div>
+    </div>
+
+    <dialog id="dlg-settings" class="dialog">
+      <form method="dialog">
+        <h2>Settings</h2>
+        <label>Anthropic API key <span class="muted small">(optional, stays in this browser)</span>
+          <input id="api-key" type="password" placeholder="sk-ant-…" autocomplete="off" /></label>
+        <label><input id="opt-fingers" type="checkbox" checked /> Show finger numbers on the letter sheet</label>
+        <label><input id="opt-octaves" type="checkbox" /> Show octave numbers on notes</label>
+        <label><input id="opt-labels" type="checkbox" checked /> Show computer-key labels on the piano</label>
+        <label><input id="opt-countin" type="checkbox" /> One-bar count-in before playing</label>
+        <label>Volume <input id="volume" type="range" min="-30" max="6" value="-4" /></label>
+        <menu><button class="btn primary" value="ok">Done</button></menu>
+      </form>
+    </dialog>
+
+    <dialog id="dlg-url" class="dialog">
+      <form method="dialog">
+        <h2>Load a MIDI file from a URL</h2>
+        <p class="muted small">The server hosting the file must allow cross-origin requests.</p>
+        <input id="url-input" type="url" placeholder="https://example.com/song.mid" />
+        <menu><button class="btn" value="cancel">Cancel</button><button class="btn primary" value="ok">Load</button></menu>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

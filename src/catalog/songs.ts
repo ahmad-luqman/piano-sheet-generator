@@ -16,8 +16,8 @@ export interface CatalogEntry {
 export const CATALOG: CatalogEntry[] = [
   {
     id: 'twinkle', title: 'Twinkle Twinkle Little Star', composer: 'Traditional', bpm: 100, timeSig: { num: 4, den: 4 },
-    rh: `C4 C4 G4 G4 A4 A4 G4:2 | F4 F4 E4 E4 D4 D4 C4:2 | G4 G4 F4 F4 E4 E4 D4:2 | G4 G4 F4 F4 E4 E4 D4:2 | C4 C4 G4 G4 A4 A4 G4:2 | F4 F4 E4 E4 D4 D4 C4:2`,
-    lh: `[C3 E3 G3]:2 [C3 E3 G3]:2 | [F3 A3 C4]:2 [C3 E3 G3]:2 | [C3 E3 G3]:2 [G3 B3 D4]:2 | [C3 E3 G3]:2 [G3 B3 D4]:2 | [C3 E3 G3]:2 [C3 E3 G3]:2 | [F3 A3 C4]:2 [C3 E3 G3]:2`,
+    rh: `C4 C4 G4 G4 | A4 A4 G4:2 | F4 F4 E4 E4 | D4 D4 C4:2 | G4 G4 F4 F4 | E4 E4 D4:2 | G4 G4 F4 F4 | E4 E4 D4:2 | C4 C4 G4 G4 | A4 A4 G4:2 | F4 F4 E4 E4 | D4 D4 C4:2`,
+    lh: `[C3 E3 G3]:4 | [F3 A3 C4]:2 [C3 E3 G3]:2 | [F3 A3 C4]:2 [C3 E3 G3]:2 | [G3 B3 D4]:2 [C3 E3 G3]:2 | [C3 E3 G3]:2 [F3 A3 C4]:2 | [C3 E3 G3]:2 [G3 B3 D4]:2 | [C3 E3 G3]:2 [F3 A3 C4]:2 | [C3 E3 G3]:2 [G3 B3 D4]:2 | [C3 E3 G3]:4 | [F3 A3 C4]:2 [C3 E3 G3]:2 | [F3 A3 C4]:2 [C3 E3 G3]:2 | [G3 B3 D4]:2 [C3 E3 G3]:2`,
   },
   {
     id: 'ode-to-joy', title: 'Ode to Joy', composer: 'Ludwig van Beethoven', bpm: 108, timeSig: { num: 4, den: 4 },
