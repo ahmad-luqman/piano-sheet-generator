@@ -82,7 +82,7 @@ Note = { midi, startBeat, durationBeats, hand, finger?, letter, octave }
   that make the chord.
 - Finger numbers (1–5) under notes at L1–L3.
 - Current position highlighted during playback; click a bar to seek.
-- Color scheme: one color per pitch class, matching the 3D piano key highlight color.
+- Color scheme: one color per pitch class on the sheet (so letters and colors become associated); the 3D piano uses hand colors instead (blue = right, orange = left) because there the question is "which hand", not "which letter".
 
 ### 5b. Advanced sheet (toggle)
 - Grand staff standard notation rendered by **abcjs** from generated ABC text: treble +
@@ -189,3 +189,18 @@ functions (5–10 lines) where your judgement as the learner matters more than m
 2. `practice/match.ts → isStepSatisfied()` — Practice mode acceptance rule: all chord
    notes required, or the melody note alone is enough, or a majority.
 3. `sheet/steps.ts → tempoRamp()` — the practice tempo progression (50→80→100 or other).
+
+## 12. Implementation status (2026-09-03)
+
+Everything in the MVP cut line is implemented and smoke-tested headlessly against the dev
+server (no console errors; search → download → arrange → play → practice verified with a
+real bitmidi file). Deviations from the plan above:
+
+- No backend at all: bitmidi is CORS-open, so search and download run in the browser.
+- Level 1 adapts its quantization grid to the tune (sixteenths are kept when the melody is
+  built from sixteenths, e.g. Für Elise), instead of a fixed eighth-note grid.
+- Doubled notes across tracks are removed at parse time; a meter is inferred from accent
+  structure when a file declares a meaningless one (1/8, 1/4).
+- Sheet colours are per pitch class; 3D colours are per hand (see §5a).
+- Tone.js is loaded on first user gesture so the AudioContext is created legally and the
+  main bundle stays smaller.

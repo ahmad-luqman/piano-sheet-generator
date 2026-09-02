@@ -36,7 +36,7 @@ export class PianoScene implements PianoView {
   private labelCache = new Map<string, THREE.Texture>();
   private showLabels = true;
   private labels = new Map<number, string>();
-  private clock = new THREE.Clock();
+  private lastFrame = performance.now();
   private noteGeomCache = new Map<string, RoundedBoxGeometry>();
   private width = totalWidth();
 
@@ -56,7 +56,6 @@ export class PianoScene implements PianoView {
     this.controls.maxPolarAngle = Math.PI / 2 - 0.15;
     this.controls.mouseButtons = { LEFT: null as unknown as THREE.MOUSE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
     this.controls.touches = { ONE: null as unknown as THREE.TOUCH, TWO: THREE.TOUCH.DOLLY_ROTATE };
-    this.resetView();
 
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x334455, 1.1));
     const dir = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -69,6 +68,7 @@ export class PianoScene implements PianoView {
     this.buildKeys();
     this.buildBody();
     this.scene.add(this.notesGroup);
+    this.resetView();
 
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
@@ -127,10 +127,26 @@ export class PianoScene implements PianoView {
     this.scene.add(dot);
   }
 
+  private focus: { low: number; high: number } = { low: 21, high: 108 };
+
+  setFocusRange(lowMidi: number, highMidi: number): void {
+    // Show at least two and a half octaves, centred on the notes actually used.
+    let low = Math.max(21, lowMidi - 3), high = Math.min(108, highMidi + 3);
+    const minSpan = 30;
+    if (high - low < minSpan) { const mid = (low + high) / 2; low = Math.max(21, Math.round(mid - minSpan / 2)); high = Math.min(108, low + minSpan); low = Math.max(21, high - minSpan); }
+    this.focus = { low, high };
+    this.resetView();
+  }
+
   resetView(): void {
-    const w = this.width;
-    this.camera.position.set(w / 2, 17, 21);
-    this.controls.target.set(w / 2, 4.5, -3);
+    const kl = this.keys.get(this.focus.low) ?? this.keys.get(21);
+    const kh = this.keys.get(this.focus.high) ?? this.keys.get(108);
+    if (!kl || !kh) return;
+    const cx = (kl.pivot.position.x + kh.pivot.position.x) / 2;
+    const span = Math.max(8, kh.pivot.position.x - kl.pivot.position.x + 2);
+    const dist = span / (2 * Math.tan((this.camera.fov * Math.PI) / 360)) / Math.max(1, this.camera.aspect) * 1.25;
+    this.camera.position.set(cx, dist * 0.8 + 3, dist * 0.9 + 4);
+    this.controls.target.set(cx, 3.5, -2.5);
     this.controls.update();
   }
 
@@ -269,8 +285,10 @@ export class PianoScene implements PianoView {
 
   private animate = (): void => {
     this.raf = requestAnimationFrame(this.animate);
-    const dt = Math.min(0.05, this.clock.getDelta());
-    const t = performance.now() / 1000;
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - this.lastFrame) / 1000);
+    this.lastFrame = now;
+    const t = now / 1000;
     for (const k of this.keys.values()) {
       const cur = k.pivot.rotation.x;
       k.pivot.rotation.x += (k.target - cur) * Math.min(1, dt * 25);

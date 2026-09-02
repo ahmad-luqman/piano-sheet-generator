@@ -10,6 +10,8 @@ export interface PianoView {
   setHints(notes: Note[] | null): void;
   setKeyLabels(labels: Map<number, string>): void;
   setShowLabels(on: boolean): void;
+  /** Frame the camera on a key range (3D) — called when a level loads. */
+  setFocusRange(lowMidi: number, highMidi: number): void;
   resetView(): void;
   dispose(): void;
   onKeyPress?: (midi: number) => void;

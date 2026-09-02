@@ -41,6 +41,7 @@ export class App {
   private lastFeedbackTimers = new Map<number, number>();
 
   constructor(_root: HTMLElement) {
+    if (import.meta.env.DEV) (window as any).__app = this;
     this.piano = createPiano($('#piano'));
     this.beginner = new BeginnerSheet($('#sheet-beginner'));
     this.advanced = new AdvancedSheet($('#sheet-advanced'));
@@ -57,7 +58,7 @@ export class App {
     this.wireBus();
     this.wireUi();
     this.refreshKeyLabels();
-    this.audio.onState = (s) => { $('#status').textContent = s === 'loading' ? 'Loading piano samples…' : s === 'sampler' ? 'Sampled grand piano ready' : s === 'synth' ? 'Synth piano (samples unavailable)' : ''; };
+    this.audio.onState = (s) => { $('#audio-status').textContent = s === 'loading' ? 'Loading piano samples…' : s === 'sampler' ? 'Sampled grand piano ready' : s === 'synth' ? 'Synth piano (samples unavailable)' : ''; };
 
     if (this.piano.kind === '2d') this.toast('WebGL is unavailable, showing a 2D keyboard.');
     this.loadSong(loadCatalogSong(CATALOG[0]));
@@ -257,6 +258,7 @@ export class App {
     this.advanced.onSeek = (b) => this.seek(b);
     if (this.sheetTab === 'advanced') this.advanced.render(this.arr, level); else this.advancedDirty = true;
     this.piano.setNotes(level.notes);
+    if (level.notes.length) this.piano.setFocusRange(Math.min(...level.notes.map((n) => n.midi)), Math.max(...level.notes.map((n) => n.midi)));
     this.player.load(level, this.arr.bpm, this.arr.beatsPerBar);
     this.player.seek(Math.min(beat, this.player.duration));
     if (this.player.countInBeats) this.player.countInBeats = this.arr.beatsPerBar;

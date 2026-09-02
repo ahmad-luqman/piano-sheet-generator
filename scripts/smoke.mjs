@@ -1,0 +1,54 @@
+import puppeteer from 'puppeteer-core';
+const SP = process.argv[2];
+const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true,
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--window-size=1400,900'] });
+const page = await browser.newPage();
+await page.setViewport({ width: 1400, height: 900 });
+const logs = [];
+page.on('console', (m) => { if (['error', 'warning', 'warn'].includes(m.type())) logs.push(`[${m.type()}] ${m.text()}`); });
+page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
+await page.goto('http://localhost:5179/', { waitUntil: 'networkidle0' });
+await new Promise((r) => setTimeout(r, 1200));
+await page.screenshot({ path: `${SP}/s1-initial.png` });
+await page.click('#btn-enable-audio');
+await new Promise((r) => setTimeout(r, 800));
+await page.click('#btn-play');
+await new Promise((r) => setTimeout(r, 2500));
+await page.screenshot({ path: `${SP}/s2-playing.png` });
+await page.click('#btn-play');
+await page.click('.tab[data-sheet="advanced"]');
+await new Promise((r) => setTimeout(r, 800));
+await page.screenshot({ path: `${SP}/s3-advanced.png` });
+// practice mode
+await page.click('.tab[data-sheet="beginner"]');
+await page.click('#mode-seg [data-mode="practice"]');
+await page.click('#btn-stop');
+await page.click('#btn-play');
+await new Promise((r) => setTimeout(r, 800));
+const status1 = await page.$eval('#status', (e) => e.textContent);
+// press Z (C3) which is wrong for Twinkle (C4), then the right key: C4 is Q on the upper row
+await page.keyboard.down('KeyZ'); await page.keyboard.up('KeyZ');
+await new Promise((r) => setTimeout(r, 200));
+await page.keyboard.down('KeyQ'); await page.keyboard.up('KeyQ');
+await new Promise((r) => setTimeout(r, 400));
+const status2 = await page.$eval('#status', (e) => e.textContent);
+await page.screenshot({ path: `${SP}/s4-practice.png` });
+await page.click('#btn-stop');
+// search
+await page.type('#search-input', 'fur elise');
+await page.click('#search-form button');
+await page.waitForFunction(() => document.querySelectorAll('#results .res-item').length > 3, { timeout: 20000 }).catch(() => {});
+await page.screenshot({ path: `${SP}/s5-search.png` });
+const items = await page.$$eval('#results .res-item .name', (els) => els.map((e) => e.textContent));
+const bit = await page.$$('#results .res-item');
+if (bit[1]) await bit[1].click();
+await page.waitForFunction(() => document.querySelector('#song-info')?.textContent?.includes('bitmidi'), { timeout: 20000 }).catch((e) => logs.push('load-timeout'));
+await new Promise((r) => setTimeout(r, 1000));
+await page.screenshot({ path: `${SP}/s6-bitmidi.png` });
+const info = await page.$eval('#song-info', (e) => e.textContent);
+const title = await page.$eval('#song-title', (e) => e.textContent);
+await page.click('#level-picker [data-level="4"]');
+await new Promise((r) => setTimeout(r, 500));
+await page.screenshot({ path: `${SP}/s7-level4.png` });
+console.log(JSON.stringify({ status1, status2, items: items.slice(0, 5), title, info, logs }, null, 2));
+await browser.close();

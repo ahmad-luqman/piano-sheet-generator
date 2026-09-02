@@ -10,8 +10,8 @@ export function parseMidi(data: ArrayBuffer | Uint8Array, title: string, source:
   const ppq = midi.header.ppq || 480;
   const bpm = Math.round(midi.header.tempos[0]?.bpm ?? 120);
   const ts = midi.header.timeSignatures[0]?.timeSignature ?? [4, 4];
-  const timeSig = { num: ts[0] || 4, den: ts[1] || 4 };
-  const beatsPerBar = timeSig.num * (4 / timeSig.den);
+  let timeSig = { num: ts[0] || 4, den: ts[1] || 4 };
+  let beatsPerBar = timeSig.num * (4 / timeSig.den);
 
   const notes: RawNote[] = [];
   midi.tracks.forEach((track, index) => {
@@ -28,11 +28,52 @@ export function parseMidi(data: ArrayBuffer | Uint8Array, title: string, source:
     }
   });
   notes.sort((a, b) => a.startBeat - b.startBeat || b.midi - a.midi);
+  dedupe(notes);
+
+  // Some files carry a meaningless meter (1/8, 1/4). Infer one from where the strong notes land.
+  if (beatsPerBar < 1.5 || beatsPerBar > 12) {
+    beatsPerBar = inferBeatsPerBar(notes);
+    timeSig = beatsPerBar === 1.5 ? { num: 3, den: 8 } : { num: beatsPerBar, den: 4 };
+  }
 
   const totalBeats = notes.reduce((m, n) => Math.max(m, n.startBeat + n.durationBeats), 0);
   const tracks = describeTracks(notes, midi.tracks.map((t) => t.name), totalBeats);
   const name = title || midi.name || 'Untitled';
   return { title: name, source, ppq, bpm, timeSig, beatsPerBar, tracks, notes, totalBeats };
+}
+
+/**
+ * Guess the bar length from accent structure: the period whose downbeat slots carry the
+ * most note weight wins; ties go to the shorter period.
+ */
+export function inferBeatsPerBar(notes: RawNote[], candidates = [1.5, 2, 3, 4]): number {
+  if (notes.length === 0) return 4;
+  const total = notes.reduce((m, n) => Math.max(m, n.startBeat + n.durationBeats), 0);
+  let best = 4, bestScore = -1;
+  for (const p of candidates) {
+    const slots = Math.max(1, Math.floor(total / p));
+    let weight = 0;
+    for (const n of notes) {
+      const phase = n.startBeat % p;
+      if (phase < 0.03 || p - phase < 0.03) weight += n.durationBeats * (0.5 + n.velocity) * (n.midi < 60 ? 1.5 : 1);
+    }
+    const score = weight / slots;
+    if (score > bestScore * 1.03) { best = p; bestScore = score; }
+  }
+  return best;
+}
+
+/** Remove notes doubled across tracks (same pitch, same onset), a common MIDI artifact. Keeps the longer one. */
+function dedupe(notes: RawNote[]): void {
+  for (let i = notes.length - 1; i > 0; i--) {
+    for (let j = i - 1; j >= 0 && notes[i].startBeat - notes[j].startBeat < 0.03; j--) {
+      if (notes[j].midi === notes[i].midi) {
+        if (notes[i].durationBeats > notes[j].durationBeats) notes[j] = { ...notes[j], durationBeats: notes[i].durationBeats };
+        notes.splice(i, 1);
+        break;
+      }
+    }
+  }
 }
 
 /** Build a Song directly from notes (used by the bundled catalog). */

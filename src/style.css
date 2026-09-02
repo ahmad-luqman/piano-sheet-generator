@@ -73,7 +73,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 .seg-btn { border: 0; background: transparent; padding: 5px 10px; border-radius: 8px; cursor: pointer; color: var(--muted); }
 .seg-btn.active { background: var(--accent); color: white; }
 .tempo input { width: 120px; }
-.status { margin-left: auto; font-size: 12px; }
+.status { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--warn); }
 
 /* Beginner sheet */
 .bs { position: relative; }

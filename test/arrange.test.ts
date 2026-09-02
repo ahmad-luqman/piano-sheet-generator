@@ -3,6 +3,7 @@ import { buildArrangement, detectChords, detectKey, makeKey, simplifyMelodyForBe
 import { CATALOG, loadCatalogSong } from '../src/catalog/songs';
 import { parseDsl } from '../src/catalog/dsl';
 import { detectSections } from '../src/arrange/sections';
+import { inferBeatsPerBar } from '../src/midi/parse';
 
 describe('key detection', () => {
   it('finds C major from a C major scale', () => {
@@ -92,5 +93,16 @@ describe('catalog end to end', () => {
   it('detects chords with a bass line (Ode to Joy bar 1 is C)', () => {
     const arr = buildArrangement(loadCatalogSong(CATALOG.find((c) => c.id === 'ode-to-joy')!));
     expect(arr.chords[0].name).toBe('C');
+  });
+});
+
+describe('meter inference', () => {
+  it('recovers a triple meter for Für Elise, 4/4 for Ode to Joy, 3/4 for Happy Birthday when the file meter is useless', () => {
+    const fe = loadCatalogSong(CATALOG.find((c) => c.id === 'fur-elise')!);
+    expect([1.5, 3]).toContain(inferBeatsPerBar(fe.notes)); // 3/8, or its two-bar 6/8 grouping
+    const ode = loadCatalogSong(CATALOG.find((c) => c.id === 'ode-to-joy')!);
+    expect(inferBeatsPerBar(ode.notes)).toBe(4);
+    const hb = loadCatalogSong(CATALOG.find((c) => c.id === 'happy-birthday')!);
+    expect(inferBeatsPerBar(hb.notes)).toBe(3);
   });
 });

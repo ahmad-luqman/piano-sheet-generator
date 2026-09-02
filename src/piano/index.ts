@@ -10,6 +10,7 @@ export function createPiano(container: HTMLElement): PianoView {
     return new PianoScene(container);
   } catch (e) {
     console.warn('WebGL unavailable, using 2D keyboard', e);
+    container.querySelectorAll('canvas').forEach((c) => c.remove()); // a half-built scene may have left one behind
     return new Piano2D(container);
   }
 }

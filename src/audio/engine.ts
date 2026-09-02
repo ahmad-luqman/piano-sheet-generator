@@ -1,4 +1,7 @@
-import * as Tone from 'tone';
+import type * as ToneNs from 'tone';
+
+type ToneModule = typeof ToneNs;
+let Tone: ToneModule | null = null;
 
 export type EngineState = 'idle' | 'loading' | 'sampler' | 'synth';
 
@@ -11,10 +14,10 @@ const SAMPLE_NOTES = ['A0', 'C1', 'D#1', 'F#1', 'A1', 'C2', 'D#2', 'F#2', 'A2', 
  */
 export class AudioEngine {
   state: EngineState = 'idle';
-  private sampler: Tone.Sampler | null = null;
-  private synth: Tone.PolySynth | null = null;
-  private metro: Tone.MembraneSynth | null = null;
-  private out: Tone.Volume | null = null;
+  private sampler: ToneNs.Sampler | null = null;
+  private synth: ToneNs.PolySynth | null = null;
+  private metro: ToneNs.MembraneSynth | null = null;
+  private out: ToneNs.Volume | null = null;
   private sustainOn = false;
   private sustained = new Set<number>();
   onState?: (s: EngineState) => void;
@@ -25,6 +28,8 @@ export class AudioEngine {
   async start(): Promise<void> {
     if (this.ready || this.state === 'loading') return;
     this.setState('loading');
+    // Loaded on demand: Tone creates an AudioContext at import time, which browsers only allow after a gesture.
+    Tone = Tone ?? (await import('tone'));
     await Tone.start();
     this.out = new Tone.Volume(-4).toDestination();
     this.synth = new Tone.PolySynth(Tone.Synth, {
@@ -37,8 +42,9 @@ export class AudioEngine {
     try {
       const urls: Record<string, string> = {};
       for (const n of SAMPLE_NOTES) urls[n] = `${n.replace('#', 's')}.mp3`;
-      const sampler = await new Promise<Tone.Sampler>((resolve, reject) => {
-        const s = new Tone.Sampler({ urls, baseUrl: SALAMANDER, release: 1.2, onload: () => resolve(s), onerror: reject });
+      const T = Tone;
+      const sampler = await new Promise<ToneNs.Sampler>((resolve, reject) => {
+        const s = new T.Sampler({ urls, baseUrl: SALAMANDER, release: 1.2, onload: () => resolve(s), onerror: reject });
       });
       sampler.connect(this.out);
       this.sampler = sampler;
@@ -50,13 +56,13 @@ export class AudioEngine {
 
   private setState(s: EngineState) { this.state = s; this.onState?.(s); }
 
-  now(): number { return Tone.now(); }
+  now(): number { return Tone ? Tone.now() : 0; }
 
   private inst() { return this.sampler ?? this.synth; }
 
   noteOn(midi: number, velocity = 0.8, when?: number): void {
     const inst = this.inst();
-    if (!inst) return;
+    if (!inst || !Tone) return;
     const note = Tone.Frequency(midi, 'midi').toNote();
     inst.triggerAttack(note, when ?? Tone.now(), Math.max(0.05, Math.min(1, velocity)));
     this.sustained.delete(midi);
@@ -64,7 +70,7 @@ export class AudioEngine {
 
   noteOff(midi: number, when?: number): void {
     const inst = this.inst();
-    if (!inst) return;
+    if (!inst || !Tone) return;
     if (this.sustainOn) { this.sustained.add(midi); return; }
     inst.triggerRelease(Tone.Frequency(midi, 'midi').toNote(), when ?? Tone.now());
   }
@@ -72,7 +78,7 @@ export class AudioEngine {
   /** Schedule a complete note; `when` is an absolute Tone time. */
   play(midi: number, velocity: number, durationSec: number, when: number): void {
     const inst = this.inst();
-    if (!inst) return;
+    if (!inst || !Tone) return;
     inst.triggerAttackRelease(Tone.Frequency(midi, 'midi').toNote(), Math.max(0.05, durationSec), when, Math.max(0.05, Math.min(1, velocity)));
   }
 

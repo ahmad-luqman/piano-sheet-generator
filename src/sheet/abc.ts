@@ -11,10 +11,10 @@ export function toAbc(arr: Arrangement, level: Level): string {
     `M:${arr.timeSig.num}/${arr.timeSig.den}`,
     'L:1/16',
     `Q:1/4=${arr.bpm}`,
-    '%%score (RH LH)',
-    `K:${keyName}`,
+    '%%score {RH LH}',
     'V:RH clef=treble name="R.H."',
     'V:LH clef=bass name="L.H."',
+    `K:${keyName}`,
   ];
   const keySig = keySignatureMap(arr.key.sharps);
   const rhBars = voiceBars(level.notes.filter((n) => n.hand === 'rh'), arr, bpb16, keySig, arr.chords);

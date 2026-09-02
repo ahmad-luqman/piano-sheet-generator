@@ -49,6 +49,7 @@ export class Piano2D implements PianoView {
   }
   setKeyLabels(labels: Map<number, string>): void { this.labels = labels; }
   setShowLabels(on: boolean): void { this.showLabels = on; }
+  setFocusRange(): void {}
   resetView(): void {}
 
   private geom() {

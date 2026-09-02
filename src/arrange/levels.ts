@@ -23,8 +23,9 @@ function median(xs: number[]): number {
  *
  *  This function turns the raw melody (already reduced to one voice) into the
  *  Level 1 melody. The default below:
- *    • drops ornaments shorter than a 16th note (0.25 beat),
- *    • snaps starts and lengths to an eighth-note grid,
+ *    • drops ornaments (notes followed almost immediately by the next note),
+ *    • snaps starts and lengths to an eighth-note grid, or a sixteenth grid when
+ *      the tune itself moves in sixteenths,
  *    • folds notes more than a 10th above/below the median down/up an octave,
  *      so the hand rarely has to jump.
  *
@@ -35,15 +36,26 @@ function median(xs: number[]): number {
  * ─────────────────────────────────────────────────────────────────────────────
  */
 export function simplifyMelodyForBeginner(melody: RawNote[], grid = 0.5): RawNote[] {
-  const kept = melody.filter((n) => n.durationBeats >= 0.25);
+  if (melody.length === 0) return [];
+  const sorted = [...melody].sort((a, b) => a.startBeat - b.startBeat);
+  // Adapt the grid to how the tune actually moves: a piece built from sixteenths
+  // (Für Elise) keeps a sixteenth grid, otherwise fast notes would collapse.
+  const iois = sorted.slice(1).map((n, i) => n.startBeat - sorted[i].startBeat).filter((d) => d > 0.02);
+  const typicalIoi = median(iois.length ? iois : [grid]);
+  const g = Math.max(0.25, Math.min(grid, quantize(typicalIoi, 0.25) || grid));
+  // Ornaments: notes followed almost immediately by another note (grace notes, trills faster than the grid).
+  const kept = sorted.filter((n, i) => {
+    const next = sorted[i + 1];
+    return !next || next.startBeat - n.startBeat >= g * 0.6;
+  });
   const center = median(kept.map((n) => n.midi));
   const out: RawNote[] = [];
   for (const n of kept) {
     let midi = n.midi;
     while (midi - center > 16) midi -= 12;
     while (center - midi > 16) midi += 12;
-    const start = quantize(n.startBeat, grid);
-    const dur = Math.max(grid, quantize(n.durationBeats, grid));
+    const start = quantize(n.startBeat, g);
+    const dur = Math.max(g, quantize(n.durationBeats, g));
     const last = out[out.length - 1];
     if (last && last.startBeat === start) {
       // two notes collapsed onto the same grid slot: keep the higher one
