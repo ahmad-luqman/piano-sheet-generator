@@ -2,7 +2,7 @@ import type { Arrangement, Level, Note } from '../types';
 import { PC_COLORS } from '../piano/types';
 import { pitchClass } from '../arrange/theory';
 
-export interface BeginnerSheetOptions { showFingers: boolean; showOctaves: boolean; barsPerRow: number }
+export interface BeginnerSheetOptions { showFingers: boolean; showOctaves: boolean; barsPerRow: number; highlightNew: boolean }
 
 /**
  * Letter-notation sheet. Each bar is a beat grid; notes are pills whose width is
@@ -18,7 +18,7 @@ export class BeginnerSheet {
   private activeNotes = new Set<HTMLElement>();
   private activeBar = -1;
   private cursor: HTMLElement | null = null;
-  private opts: BeginnerSheetOptions = { showFingers: true, showOctaves: false, barsPerRow: 4 };
+  private opts: BeginnerSheetOptions = { showFingers: true, showOctaves: false, barsPerRow: 4, highlightNew: true };
 
   constructor(private container: HTMLElement) {
     this.root = document.createElement('div');
@@ -80,7 +80,7 @@ export class BeginnerSheet {
             g.sort((a, b) => b.midi - a.midi);
             g.forEach((n, i) => {
               const el = document.createElement('div');
-              el.className = 'bs-note' + (g.length > 1 ? ' stacked' : '');
+              el.className = 'bs-note' + (g.length > 1 ? ' stacked' : '') + (this.opts.highlightNew && n.isNew ? ' new' : '');
               el.style.left = `${((n.startBeat - barStart) / bpb) * 100}%`;
               el.style.width = `calc(${(Math.min(n.durationBeats, barStart + bpb - n.startBeat) / bpb) * 100}% - 3px)`;
               el.style.setProperty('--c', PC_COLORS[pitchClass(n.midi)]);

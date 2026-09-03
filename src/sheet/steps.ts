@@ -65,7 +65,8 @@ export function generateSteps(arr: Arrangement, levelId: LevelId): Step[] {
     body: `This piece is in ${level.key.name}${level.transpose ? ` (moved from ${arr.key.name} to stay on white keys)` : ''} at about ${arr.bpm} beats per minute, ${arr.timeSig.num}/${arr.timeSig.den} time (count ${arr.timeSig.num} per bar). ` +
       `Middle C is the C nearest the centre of the keyboard, lit on the 3D piano. ` +
       `Your right hand will use the keys from ${midiToName(rhLow, level.key.useFlats)} up to ${midiToName(rhHigh, level.key.useFlats)}.` +
-      (rh[0] ? ` The first right-hand note is ${rh[0].letter}${rh[0].octave}${rh[0].finger ? `, played with finger ${rh[0].finger} (1 = thumb, 5 = little finger)` : ''}.` : ''),
+      (rh[0] ? ` The first right-hand note is ${rh[0].letter}${rh[0].octave}${rh[0].finger ? `, played with finger ${rh[0].finger} (1 = thumb, 5 = little finger)` : ''}.` : '') +
+      (level.eased?.length ? ` ${level.eased.map((e) => barRange(sections[e.section])).join(' and ')} ${level.eased.length === 1 ? 'is' : 'are'} shown as stage ${level.eased[0].fromLevel} because ${level.eased.length === 1 ? 'it is' : 'they are'} much harder than the rest.` : ''),
   });
 
   // 2. Listen

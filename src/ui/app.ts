@@ -1,6 +1,6 @@
 import type { Arrangement, Hand, Level, LevelId, Note, Song } from '../types';
 import { LEVEL_META } from '../types';
-import { buildArrangement } from '../arrange';
+import { buildArrangement, describeChanges } from '../arrange';
 import { parseMidi } from '../midi/parse';
 import { CATALOG, findCatalog, loadCatalogSong } from '../catalog/songs';
 import { downloadMidi, searchBitmidiAll, type SearchResult } from '../search/bitmidi';
@@ -27,6 +27,7 @@ export class App {
   private arr: Arrangement | null = null;
   private levelId: LevelId = 1;
   private transposeEarly = true;
+  private easeHard = true;
   private sheetTab: 'beginner' | 'advanced' = 'beginner';
   private steps: Step[] = [];
   private currentStep = -1;
@@ -142,6 +143,8 @@ export class App {
     $<HTMLInputElement>('#api-key').addEventListener('change', (e) => setApiKey((e.target as HTMLInputElement).value.trim() || null));
     $<HTMLInputElement>('#opt-fingers').addEventListener('change', (e) => this.beginner.setOptions({ showFingers: (e.target as HTMLInputElement).checked }));
     $<HTMLInputElement>('#opt-octaves').addEventListener('change', (e) => this.beginner.setOptions({ showOctaves: (e.target as HTMLInputElement).checked }));
+    $<HTMLInputElement>('#opt-new').addEventListener('change', (e) => this.beginner.setOptions({ highlightNew: (e.target as HTMLInputElement).checked }));
+    $<HTMLInputElement>('#opt-ease').addEventListener('change', (e) => { this.easeHard = (e.target as HTMLInputElement).checked; this.arrange(this.arr?.melodyTrack); });
     $<HTMLInputElement>('#opt-labels').addEventListener('change', (e) => this.piano.setShowLabels((e.target as HTMLInputElement).checked));
     $<HTMLInputElement>('#opt-countin').addEventListener('change', (e) => { this.player.countInBeats = (e.target as HTMLInputElement).checked ? (this.arr?.beatsPerBar ?? 4) : 0; });
     $<HTMLInputElement>('#volume').addEventListener('input', (e) => this.audio.setVolumeDb(parseInt((e.target as HTMLInputElement).value, 10)));
@@ -263,7 +266,7 @@ export class App {
   private arrange(melodyTrack?: number): void {
     if (!this.song) return;
     try {
-      this.arr = buildArrangement(this.song, { melodyTrack, transposeEarly: this.transposeEarly });
+      this.arr = buildArrangement(this.song, { melodyTrack, transposeEarly: this.transposeEarly, easeHardSections: this.easeHard });
     } catch (err) { this.toast(`Could not arrange: ${msg(err)}`, true); return; }
     $<HTMLSelectElement>('#melody-track').value = String(this.arr.melodyTrack);
     $('#song-title').textContent = this.arr.title;
@@ -290,6 +293,8 @@ export class App {
     document.querySelectorAll<HTMLButtonElement>('#level-picker button').forEach((b) => b.classList.toggle('active', b.dataset.level === String(id)));
     const level = this.level!;
     $('#easy-key-info').textContent = level.transpose ? `${level.key.name}, from ${this.arr.key.name}` : '';
+    const eased = (level.eased ?? []).map((e) => { const s = this.arr!.sections[e.section]; return `bars ${s.startBar + 1}–${s.endBar + 1} shown as stage ${e.fromLevel}`; });
+    $('#level-changes').textContent = [describeChanges(level), ...eased].filter(Boolean).join(' ').replace(/\. bars/, '. Bars');
     this.beginner.render(this.arr, level);
     this.beginner.onSeek = (b) => this.seek(b);
     this.advanced.onSeek = (b) => this.seek(b);

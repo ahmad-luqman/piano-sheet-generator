@@ -32,7 +32,7 @@
             <div id="song-info" class="muted"></div>
           </div>
           <div class="level-picker" id="level-picker" role="tablist" aria-label="Difficulty level"></div>
-          <div id="level-hint" class="muted small level-hint"></div>
+          <div class="level-hint small"><div id="level-hint" class="muted"></div><div id="level-changes" class="muted"></div></div>
           <label class="toggle small" title="Move stages 1–3 to the key with the fewest black keys"><input id="opt-easykey" type="checkbox" checked /> Easy key <span id="easy-key-info" class="muted"></span></label>
           <div class="sheet-tabs">
             <button class="tab active" data-sheet="beginner">Letter sheet</button>
@@ -110,6 +110,8 @@
           <input id="api-key" type="password" placeholder="sk-ant-…" autocomplete="off" /></label>
         <label><input id="opt-fingers" type="checkbox" checked /> Show finger numbers on the letter sheet</label>
         <label><input id="opt-octaves" type="checkbox" /> Show octave numbers on notes</label>
+        <label><input id="opt-new" type="checkbox" checked /> Highlight notes added at this stage</label>
+        <label><input id="opt-ease" type="checkbox" checked /> Show much harder sections one stage easier</label>
         <label><input id="opt-labels" type="checkbox" checked /> Show computer-key labels on the piano</label>
         <label><input id="opt-countin" type="checkbox" /> One-bar count-in before playing</label>
         <label>Volume <input id="volume" type="range" min="-30" max="6" value="-4" /></label>
