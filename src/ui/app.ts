@@ -258,9 +258,9 @@ export class App {
 
   private async pick(r: SearchResult): Promise<void> {
     if (r.source === 'catalog') { const entry = CATALOG.find((c) => c.id === r.id)!; this.loadSong(loadCatalogSong(entry)); return; }
+    // A failed or invalid analysis is not final: a fresh download reports its own error, and a blip gets retried.
     const analysed = cachedAnalysis(r);
     if (analysed?.song) { this.loadSong(analysed.song); return; }
-    if (analysed && !analysed.valid) { this.toast(`Could not load: ${analysed.error}`, true); return; }
     await this.loadFromUrl(r.downloadUrl, r.name);
   }
 

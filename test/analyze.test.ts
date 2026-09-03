@@ -155,11 +155,12 @@ describe('analyzeVersion cache', () => {
     await analyzeVersion(r);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
-  it('records a failed download as an invalid version', async () => {
+  it('records a failed download as an invalid version without a parsed song', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 404 })));
     const a = await analyzeVersion(result('cache-404'));
     expect(a.valid).toBe(false);
     expect(a.error).toMatch(/404/);
+    expect(a.song).toBeUndefined();
   });
   it('analyses the top N with a concurrency cap and skips catalog entries', async () => {
     let inFlight = 0, peak = 0;

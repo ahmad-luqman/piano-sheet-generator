@@ -68,4 +68,5 @@ making yourself:
 - Tempo changes inside a file are flattened to the first tempo.
 - bitmidi hosts user uploads of varying quality and copyright status. The version badges judge
   instrumentation from General MIDI program numbers, so a band file that never sets programs reads as
-  "piano + others" rather than "band".
+  "piano + others" rather than "band". A format-0 file keeps everything in one track, so its drums are
+  parsed as pitched notes and it reads as "single track".

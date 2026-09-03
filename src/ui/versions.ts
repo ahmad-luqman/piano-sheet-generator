@@ -48,9 +48,9 @@ export class GroupCard {
 
   private get isCatalog(): boolean { return this.g.best.source === 'catalog'; }
 
-  /** The analysed version a beginner should get, if any has been analysed yet. */
+  /** The readable analysed version a beginner should get, if any has been analysed yet. */
   get recommended(): { r: RankedResult; a: VersionAnalysis } | undefined {
-    const known = this.g.versions.map((r) => ({ r, a: cachedAnalysis(r)! })).filter((x) => x.a);
+    const known = this.g.versions.map((r) => ({ r, a: cachedAnalysis(r)! })).filter((x) => x.a?.valid);
     if (known.length === 0) return undefined;
     return known.sort((x, y) => recommendScore(y.a) - recommendScore(x.a))[0];
   }

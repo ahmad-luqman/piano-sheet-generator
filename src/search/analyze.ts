@@ -263,7 +263,11 @@ export function cachedAnalysis(r: { downloadUrl: string }): VersionAnalysis | un
   return settled.get(r.downloadUrl);
 }
 
-/** Download, parse and analyse one result. Concurrent callers share the download; failures are not cached. */
+/**
+ * Download, parse and analyse one result. Concurrent callers share the download. A failed
+ * download or an unreadable file is recorded as an invalid analysis so the card can say so;
+ * picking such a version downloads again rather than trusting the cached failure.
+ */
 export function analyzeVersion(r: SearchResult, signal?: AbortSignal): Promise<VersionAnalysis> {
   const key = r.downloadUrl;
   const hit = settled.get(key);
