@@ -127,7 +127,7 @@ export function generateSteps(arr: Arrangement, levelId: LevelId): Step[] {
   for (const t of tempoRamp()) {
     steps.push({
       title: `Whole piece at ${Math.round(t * 100)}% speed`,
-      body: t >= 1 ? 'Full speed. Once this is comfortable, try the next level.' : 'Play it through. Mistakes are fine; keep going and loop tricky bars.',
+      body: t >= 1 ? 'Full speed. Once this is comfortable, try the next stage.' : 'Play it through. Mistakes are fine; keep going and loop tricky bars.',
       action: { startBar: 0, endBar: arr.totalBars - 1, hands: lh.length ? 'both' : 'rh', tempoScale: t, level: levelId, mode: 'practice' },
     });
   }
@@ -139,8 +139,10 @@ function uniqueChords(level: Level, lh: Note[]): { name: string; keys: string }[
   for (const c of level.chords) {
     if (seen.has(c.name)) continue;
     const pitches = lh.filter((n) => Math.abs(n.startBeat - c.startBeat) < 0.01).map((n) => n.midi);
-    // Moving patterns put one note on the chord's first beat; show the whole voicing instead.
-    const keys = (pitches.length >= 2 ? pitches : c.pitches).sort((a, b) => a - b).map((m) => midiToName(m, level.key.useFlats)).join(' ');
+    // Moving patterns put one note on the chord's first beat; show the whole voicing for those.
+    // Held textures (one bass note, root and fifth, block) show exactly what sounds.
+    const moving = level.lhPattern === 'broken' || level.lhPattern === 'alberti' || level.lhPattern === 'waltz' || (level.id === 5 && !level.lhPattern);
+    const keys = (pitches.length && !moving ? pitches : c.pitches).sort((a, b) => a - b).map((m) => midiToName(m, level.key.useFlats)).join(' ');
     seen.set(c.name, keys);
   }
   return [...seen].map(([name, keys]) => ({ name, keys }));

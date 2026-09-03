@@ -43,7 +43,8 @@ describe('suggested start stage', () => {
   it('starts nursery tunes high and Für Elise lower, with a reason', () => {
     const twinkle = buildArrangement(loadCatalogSong(CATALOG.find((c) => c.id === 'twinkle')!));
     const elise = buildArrangement(loadCatalogSong(CATALOG.find((c) => c.id === 'fur-elise')!));
-    expect(twinkle.suggestedLevel!.level).toBeGreaterThanOrEqual(4);
+    expect(twinkle.suggestedLevel!.level).toBe(5);
+    expect(twinkle.suggestedLevel!.reason).toContain('one step away');
     expect(elise.suggestedLevel!.level).toBeLessThan(twinkle.suggestedLevel!.level);
     expect(elise.suggestedLevel!.reason.length).toBeGreaterThan(10);
   });

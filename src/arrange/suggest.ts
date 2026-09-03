@@ -17,10 +17,12 @@ const METRIC_WORDS: Record<keyof Omit<DifficultyFingerprint, 'overall' | 'noteCo
  *  Walk up the ladder and stop at the last stage whose fingerprint stays under
  *  `maxOverall`, with no single metric pinned at `maxSingle`. The reason names
  *  the metric that grows most at the next stage, so the hint reads
- *  "start at stage 3: stage 4 adds faster notes".
+ *  "start at stage 3: stage 4 adds faster notes". The suggestion tops out at
+ *  stage 5: the original carries no finger numbers or easing, so even an easy
+ *  piece is better met one step below it.
  * ─────────────────────────────────────────────────────────────────────────────
  */
-export function suggestStartLevel(levels: Record<LevelId, Level>, bpm: number, maxOverall = 0.35, maxSingle = 0.8): { level: LevelId; reason: string } {
+export function suggestStartLevel(levels: Record<LevelId, Level>, bpm: number, maxOverall = 0.35, maxSingle = 0.8, cap: LevelId = 5): { level: LevelId; reason: string } {
   const ids: LevelId[] = [1, 2, 3, 4, 5, 6];
   const fps = ids.map((id) => fingerprint(levels[id].notes, bpm));
   const ok = (fp: DifficultyFingerprint) => fp.overall <= maxOverall && metrics(fp).every(([, m]) => m.score < maxSingle);
@@ -29,7 +31,8 @@ export function suggestStartLevel(levels: Record<LevelId, Level>, bpm: number, m
     if (!ok(fps[id - 1])) break;
     level = id;
   }
-  if (level === 6) return { level, reason: 'every stage looks manageable, so start with the original' };
+  if (level === 6) return { level: cap, reason: 'every stage looks manageable; the original is one step away' };
+  if (level > cap) level = cap;
   const cur = fps[level - 1], next = fps[level];
   const [name] = metrics(next).sort((a, b) => (b[1].score - cur[b[0]].score) - (a[1].score - cur[a[0]].score))[0];
   const nextId = (level + 1) as LevelId;

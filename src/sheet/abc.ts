@@ -7,7 +7,7 @@ export function toAbc(arr: Arrangement, level: Level): string {
   const header = [
     'X:1',
     `T:${escapeAbc(arr.title)}`,
-    `C:Level ${level.id} · ${level.name}`,
+    `C:Stage ${level.id} · ${level.name}`,
     `M:${arr.timeSig.num}/${arr.timeSig.den}`,
     'L:1/16',
     `Q:1/4=${arr.bpm}`,

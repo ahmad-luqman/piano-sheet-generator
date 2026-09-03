@@ -66,3 +66,15 @@ describe('per-section easing', () => {
     expect(levels[4].eased).toBeUndefined();
   });
 });
+
+describe('steps across the ladder', () => {
+  it('lists what actually sounds for held textures and the voicing for moving ones', async () => {
+    const { generateSteps } = await import('../src/sheet/steps');
+    const arr = catalog('twinkle');
+    const chordStep = (id: 2 | 3 | 5) => generateSteps(arr, id).find((s) => s.title === 'Learn the left-hand chords')!.body;
+    expect(chordStep(2)).toContain('C (C3)');
+    expect(chordStep(2)).not.toContain('E3 G3');
+    expect(chordStep(3)).toContain('C (C3 G3)');
+    expect(chordStep(5)).toContain('C (C3 E3 G3)');
+  });
+});

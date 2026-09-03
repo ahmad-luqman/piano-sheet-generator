@@ -214,7 +214,7 @@ const explanations = new Map<string, string>();
 
 /** "Why Am here?" answered from the key, the bar and the melody. Cached per piece, key, chord and bar. */
 export async function explainChord(arr: Arrangement, level: Level, chord: Chord, bar: number): Promise<string> {
-  const cacheKey = `${arr.title}|${level.key.name}|${chord.name}|${bar}`;
+  const cacheKey = `${arr.title}|${arr.totalBars}|${arr.melodyTrack}|${level.key.name}|${chord.name}|${bar}`;
   const hit = explanations.get(cacheKey);
   if (hit) return hit;
   const c = client();
