@@ -17,7 +17,12 @@ is one click away for those who can.
 - **Letter sheet**: colour-coded note pills with letter names, finger numbers and chord symbols.
 - **Standard notation**: grand staff rendered by abcjs.
 - **3D piano** (Three.js) with Synthesia-style falling notes, key animation, and a 2D fallback.
-- **Listen** and **Practice** modes. Practice waits for you to play each note before moving on.
+- **Listen**, **Learn**, **Rhythm** and **Perform** modes. Learn waits for you to play each note; Rhythm keeps time
+  and scores your timing with hints; Perform keeps time with no hints.
+- **Earned progression**: every run is scored per bar and hand, saved in your browser, and shown as a heat map on the
+  sheet. The panel names the interval behind most errors, suggests the next drill (weakest bars, weaker hand, slower),
+  builds today's set of new, weak and due sections on a spaced schedule, counts clean runs toward the next stage, and
+  fades finger numbers, letters and falling notes as runs come clean. Claude can diagnose errors and write a journal note.
 - **How to play** steps: hand position, right hand by section, left-hand chords, hands together,
   tempo ramp. Optional rewrite by Claude with your own API key.
 - **Inputs**: mouse/touch, computer keyboard (two octaves, arrow keys to shift), Web MIDI keyboards.
@@ -49,7 +54,7 @@ Deploys anywhere static files are served. A GitHub Pages workflow is included in
 
 If the automatic melody pick is wrong, choose another track under **Melody track** in the side panel.
 
-## Four decisions left for you
+## Six decisions left for you
 
 The app ships with working defaults, but these small functions encode teaching choices worth
 making yourself:
@@ -60,12 +65,16 @@ making yourself:
 | `src/practice/match.ts` → `isStepSatisfied()` | When has the learner "played" a step: exact chord, melody note only, majority? |
 | `src/sheet/steps.ts` → `tempoRamp()` | How fast should the hands-together tempo ramp go? |
 | `src/search/analyze.ts` → `RECOMMEND` | Which upload of a song should a beginner get by default: how much do piano-only, a clean hand split and a confident melody each count? |
+| `src/practice/score.ts` → `PROMOTION` | When is a run clean and a stage earned: note and timing thresholds, tempo, how many runs, how fast the aids fade. |
+| `src/practice/match.ts` → `TIMING` | How far from the beat still counts as on time. |
 
 ## Known limits
 
 - Melody and chord detection are heuristics; dense band arrangements will be rough. Stage 6 is
   the melody track plus one partner track as written, not every track in the file.
 - Tempo changes inside a file are flattened to the first tempo.
+- Progress lives in this browser's localStorage only; clearing site data clears it. Timing is measured from
+  the app's own clock, so a laggy MIDI or keyboard path shows up as late notes.
 - bitmidi hosts user uploads of varying quality and copyright status. The version badges judge
   instrumentation from General MIDI program numbers, so a band file that never sets programs reads as
   "piano + others" rather than "band". A format-0 file keeps everything in one track, so its drums are

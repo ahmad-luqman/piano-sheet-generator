@@ -149,6 +149,20 @@ Files: `src/arrange/levels.ts`, `src/arrange/transpose.ts` (new), `src/types.ts`
 
 ## Phase E — Earned, adaptive progression
 
+**Status: shipped 2026-09-04.** Items 1–8 landed in `src/practice/player.ts` (Learn, Rhythm, Perform
+modes; per-onset results), `src/practice/match.ts` (timing window), `src/practice/score.ts`
+(per-bar, per-hand scoring, error cause, the promotion rule), `src/practice/progress.ts`
+(localStorage progress, spaced fragments, daily set, scaffold count), `src/practice/next.ts`
+(candidate drills and the rule that picks one), `src/sheet/steps.ts` (the adaptive step replaces
+the tempo ramp), `src/ui/progress.ts` and `diagnoseErrors` / `writeJournal` in `src/llm/claude.ts`.
+Decision 4 taken: two consecutive clean whole-piece runs at 90% notes and 80% timing, at 80% tempo
+or faster, in Rhythm or Perform mode; Learn runs never promote. Reading aids fade automatically,
+one per two clean runs, with a "show all aids" button. Review is not a fifth mode: the panel's
+"Do it" and today's-set buttons apply the drill (mode, hands, tempo, loop) in one click.
+Verified in headless Chrome on Twinkle: a Rhythm lap and a whole-piece Perform lap both scored
+clean, the streak read 1 of 2, the bar heat turned green and the record survived a reload
+(`scripts/smoke-progress.mjs`). The two Claude calls were checked for shape, not run live.
+
 Problem: `isStepSatisfied` only checks that every required key was eventually pressed.
 Timing and wrong notes are ignored, so the app cannot know when a learner is ready.
 
@@ -222,7 +236,7 @@ that for the short ones. A full practice session with everything on is a few cen
 
 ## Suggested order
 
-A → D → B → E → C → F. A, D and B are shipped; E is next.
+A → D → B → E → C → F. A, D, B and E are shipped; C is next.
 
 Reasoning: A and D each change what a beginner experiences on day one and need no new
 services. The fingerprint lands at the end of A so both B and D can use it. E is the largest and
@@ -235,5 +249,5 @@ D, then add one call per phase where that phase's data makes it useful.
 1. ~~Left-hand ladder patterns and order (Phase D.1).~~ Six stages, decided 2026-09-03.
 2. ~~Transposition default (Phase D.2).~~ On for stages 1–3, toggle in the song bar.
 3. ~~Stages first with a slider later, or slider only (Phase D.3).~~ Stages now.
-4. Promotion rule thresholds (Phase E.4). Can wait until E starts.
+4. ~~Promotion rule thresholds (Phase E.4).~~ Two clean runs at 90/80, ≥80% tempo, timed modes only. Decided 2026-09-04.
 5. Confirm the phase order, or pick the first two phases to take.
