@@ -38,6 +38,11 @@ h1, h2 { margin: 0; font-weight: 650; }
 .results .res-item .tag { font-size: 11px; padding: 2px 6px; border-radius: 6px; background: var(--panel-2); color: var(--muted); }
 .results .res-item .tag.catalog { background: #14532d; color: #bbf7d0; }
 .results .res-empty { padding: 14px; color: var(--muted); }
+.results .res-item .res-more { margin-left: 4px; }
+.results .res-versions { margin: 0 0 6px 28px; border-left: 2px solid var(--line); }
+.results .res-ver { display: flex; gap: 10px; align-items: center; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.results .res-ver:hover { background: var(--panel-2); }
+.results .res-ver .name { flex: 1; color: var(--muted); }
 .results .res-sugg { display: flex; gap: 6px; flex-wrap: wrap; padding: 6px 10px 10px; }
 
 .main { flex: 1; display: grid; grid-template-columns: 1fr 340px; min-height: 0; }

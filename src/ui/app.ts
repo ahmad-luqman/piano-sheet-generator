@@ -3,7 +3,8 @@ import { LEVEL_META } from '../types';
 import { buildArrangement } from '../arrange';
 import { parseMidi } from '../midi/parse';
 import { CATALOG, findCatalog, loadCatalogSong } from '../catalog/songs';
-import { downloadMidi, searchBitmidi, type SearchResult } from '../search/bitmidi';
+import { downloadMidi, searchBitmidiAll, type SearchResult } from '../search/bitmidi';
+import { searchGroups, titleCase, type SongGroup } from '../search/rank';
 import { BeginnerSheet } from '../sheet/beginner';
 import { AdvancedSheet } from '../sheet/advanced';
 import { generateSteps, type Step } from '../sheet/steps';
@@ -90,7 +91,7 @@ export class App {
     $('#overlay-audio').addEventListener('click', (e) => { if (e.target === e.currentTarget) { $('#overlay-audio').hidden = true; void this.ensureAudio(); } });
 
     $<HTMLFormElement>('#search-form').addEventListener('submit', (e) => { e.preventDefault(); void this.search($<HTMLInputElement>('#search-input').value); });
-    $('#btn-catalog').addEventListener('click', () => this.showResults(CATALOG.map(catalogResult), '', true));
+    $('#btn-catalog').addEventListener('click', () => this.showResults(searchGroups(CATALOG.map(catalogResult), ''), '', true));
     $<HTMLInputElement>('#file-input').addEventListener('change', async (e) => {
       const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return;
       try { this.loadSong(parseMidi(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, ''), 'upload')); } catch (err) { this.toast(`Could not read that file: ${msg(err)}`, true); }
@@ -165,36 +166,61 @@ export class App {
     this.searchAbort?.abort();
     const ac = new AbortController(); this.searchAbort = ac;
     const local = findCatalog(q).map(catalogResult);
-    this.showResults(local, q, false, 'Searching bitmidi.com…');
+    this.showResults(searchGroups(local, q), q, false, 'Searching bitmidi.com…');
     try {
-      const remote = await searchBitmidi(q, 0, ac.signal);
+      const remote = await searchBitmidiAll(q, ac.signal);
       if (ac.signal.aborted) return;
-      this.showResults([...local, ...remote], q, true);
+      this.showResults(searchGroups([...local, ...remote], q), q, true);
       if (remote.length === 0 && local.length === 0 && getApiKey()) {
         const sugg = await suggestSearchTerms(q).catch(() => []);
         if (sugg.length) this.showSuggestions(sugg);
       }
     } catch (err) {
       if (ac.signal.aborted) return;
-      this.showResults(local, q, true, `Internet search failed (${msg(err)}). Built-in matches shown.`);
+      this.showResults(searchGroups(local, q), q, true, `Internet search failed (${msg(err)}). Built-in matches shown.`);
     }
   }
 
-  private showResults(items: SearchResult[], q: string, done: boolean, note?: string): void {
+  /** One card per song; uploads of the same title sit behind a "N versions" toggle. */
+  private showResults(groups: SongGroup[], q: string, done: boolean, note?: string): void {
     const box = $('#results');
     box.innerHTML = '';
+    const files = groups.reduce((n, g) => n + g.versions.length, 0);
     const head = document.createElement('div'); head.className = 'res-head';
-    head.innerHTML = `<span>${items.length} result${items.length === 1 ? '' : 's'}${q ? ` for “${esc(q)}”` : ''}${note ? ` · ${esc(note)}` : ''}</span><button class="btn small">Close</button>`;
+    const count = groups.length === files ? `${groups.length} result${groups.length === 1 ? '' : 's'}` : `${groups.length} song${groups.length === 1 ? '' : 's'}, ${files} files`;
+    head.innerHTML = `<span>${count}${q ? ` for “${esc(q)}”` : ''}${note ? ` · ${esc(note)}` : ''}</span><button class="btn small">Close</button>`;
     head.querySelector('button')!.addEventListener('click', () => { box.hidden = true; });
     box.appendChild(head);
-    if (items.length === 0 && done) { const e = document.createElement('div'); e.className = 'res-empty'; e.textContent = 'Nothing found. Try the original title, the composer, or fewer words.'; box.appendChild(e); }
-    for (const r of items) {
-      const el = document.createElement('div'); el.className = 'res-item';
-      el.innerHTML = `<span class="tag ${r.source}">${r.source === 'catalog' ? 'built-in' : 'bitmidi'}</span><span class="name">${esc(r.name)}</span>${r.views ? `<span class="muted small">${r.views.toLocaleString()} views</span>` : ''}`;
-      el.addEventListener('click', () => { box.hidden = true; void this.pick(r); });
-      box.appendChild(el);
-    }
+    if (groups.length === 0 && done) { const e = document.createElement('div'); e.className = 'res-empty'; e.textContent = 'Nothing found. Try the original title, the composer, or fewer words.'; box.appendChild(e); }
+    for (const g of groups) box.appendChild(this.renderGroup(g));
     box.hidden = false;
+  }
+
+  private renderGroup(g: SongGroup): HTMLElement {
+    const box = $('#results');
+    const wrap = document.createElement('div'); wrap.className = 'res-group';
+    const best = g.best;
+    const isCatalog = best.source === 'catalog';
+    const label = isCatalog ? best.name : g.displayTitle + (g.artist ? ` <span class="muted">· ${esc(titleCase(g.artist))}</span>` : '');
+    const el = document.createElement('div'); el.className = 'res-item';
+    el.innerHTML = `<span class="tag ${best.source}">${isCatalog ? 'built-in' : 'bitmidi'}</span><span class="name">${isCatalog ? esc(label) : label}</span>` +
+      (best.views ? `<span class="muted small">${best.views.toLocaleString()} views</span>` : '') +
+      (g.versions.length > 1 ? `<button class="btn small res-more" type="button">${g.versions.length} versions</button>` : '');
+    el.addEventListener('click', () => { box.hidden = true; void this.pick(best); });
+    wrap.appendChild(el);
+    const more = el.querySelector<HTMLButtonElement>('.res-more');
+    if (more) {
+      const list = document.createElement('div'); list.className = 'res-versions'; list.hidden = true;
+      for (const v of g.versions) {
+        const row = document.createElement('div'); row.className = 'res-ver';
+        row.innerHTML = `<span class="name">${esc(v.name)}</span>${v.views ? `<span class="muted small">${v.views.toLocaleString()} views</span>` : ''}`;
+        row.addEventListener('click', () => { box.hidden = true; void this.pick(v); });
+        list.appendChild(row);
+      }
+      wrap.appendChild(list);
+      more.addEventListener('click', (e) => { e.stopPropagation(); list.hidden = !list.hidden; more.textContent = list.hidden ? `${g.versions.length} versions` : 'Hide versions'; });
+    }
+    return wrap;
   }
 
   private showSuggestions(terms: string[]): void {
