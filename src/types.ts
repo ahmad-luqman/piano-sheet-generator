@@ -20,6 +20,7 @@ export interface Song {
   tracks: TrackInfo[];
   notes: RawNote[];              // all non-percussion notes
   totalBeats: number;
+  hasDrums?: boolean;            // the file had a channel-10 track (dropped from `notes`)
 }
 
 export interface TrackInfo {
@@ -30,6 +31,7 @@ export interface TrackInfo {
   polyphony: number;             // 0 = monophonic, 1 = always chords
   coverage: number;              // fraction of the song where this track sounds
   isMelodyCandidate: boolean;
+  family?: string;               // General MIDI family of the track's program: "piano", "guitar", "strings", …
 }
 
 export interface KeyInfo {

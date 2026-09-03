@@ -14,9 +14,12 @@ export function parseMidi(data: ArrayBuffer | Uint8Array, title: string, source:
   let beatsPerBar = timeSig.num * (4 / timeSig.den);
 
   const notes: RawNote[] = [];
+  let hasDrums = false;
+  const families: string[] = [];
   midi.tracks.forEach((track, index) => {
-    if (track.channel === 9) return; // percussion
     if (track.notes.length === 0) return;
+    if (track.channel === 9 || track.instrument.percussion) { hasDrums = true; return; } // percussion
+    families[index] = track.instrument.family;
     for (const n of track.notes) {
       notes.push({
         midi: n.midi,
@@ -37,9 +40,9 @@ export function parseMidi(data: ArrayBuffer | Uint8Array, title: string, source:
   }
 
   const totalBeats = notes.reduce((m, n) => Math.max(m, n.startBeat + n.durationBeats), 0);
-  const tracks = describeTracks(notes, midi.tracks.map((t) => t.name), totalBeats);
+  const tracks = describeTracks(notes, midi.tracks.map((t) => t.name), totalBeats, families);
   const name = title || midi.name || 'Untitled';
-  return { title: name, source, ppq, bpm, timeSig, beatsPerBar, tracks, notes, totalBeats };
+  return { title: name, source, ppq, bpm, timeSig, beatsPerBar, tracks, notes, totalBeats, hasDrums };
 }
 
 /**
@@ -91,11 +94,11 @@ export function songFromNotes(
   for (const n of sorted) trackNames[n.track] = trackNames[n.track] ?? (n.track === 0 ? 'Right hand' : 'Left hand');
   return {
     title, source, ppq: 480, bpm, timeSig, beatsPerBar, notes: sorted, totalBeats,
-    tracks: describeTracks(sorted, trackNames, totalBeats),
+    tracks: describeTracks(sorted, trackNames, totalBeats, trackNames.map(() => 'piano')),
   };
 }
 
-export function describeTracks(notes: RawNote[], names: string[], totalBeats: number): TrackInfo[] {
+export function describeTracks(notes: RawNote[], names: string[], totalBeats: number, families: string[] = []): TrackInfo[] {
   const byTrack = new Map<number, RawNote[]>();
   for (const n of notes) {
     if (!byTrack.has(n.track)) byTrack.set(n.track, []);
@@ -115,7 +118,7 @@ export function describeTracks(notes: RawNote[], names: string[], totalBeats: nu
     const coverage = totalBeats ? Math.min(1, sounding / totalBeats) : 0;
     infos.push({
       index, name: names[index] || `Track ${index + 1}`, noteCount: tn.length,
-      meanPitch, polyphony, coverage, isMelodyCandidate: tn.length >= 8,
+      meanPitch, polyphony, coverage, isMelodyCandidate: tn.length >= 8, family: families[index],
     });
   }
   return infos.sort((a, b) => a.index - b.index);
