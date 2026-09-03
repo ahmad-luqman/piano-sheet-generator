@@ -48,6 +48,9 @@ export function buildQueryVariants(query: string): QueryVariant[] {
     out.push({ q: q.tokens.join('_'), page: 0 });
   }
   if (q.title && q.artist) out.push({ q: `"${q.title}" ${q.artist}`, page: 0 });
+  // "let it be by the beatles": retrieval-only split; scoring never treats "by" as a separator.
+  const by = /^(.+?)\s+by\s+(.+)$/i.exec(plain);
+  if (by) out.push({ q: `"${normalizeQuery(by[1]).folded}" ${normalizeQuery(by[2]).folded}`, page: 0 });
   const sig = q.significant.join(' ');
   if (sig && sig !== q.folded) out.push({ q: sig, page: 0 });
   const seen = new Set<string>();

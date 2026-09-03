@@ -27,6 +27,9 @@ export interface SongGroup {
  *    exact title match  > query as a contiguous phrase in the title
  *    > fraction of query tokens present > artist match > popularity (log views)
  *  with a small penalty for every extra word in the title ("Let It Be Me").
+ *  Built-in catalog matches carry a flat bonus above all of that: the catalog
+ *  lookup already vetted them, and a bundled, hand-checked arrangement should
+ *  never sit under a popular upload of the same tune.
  *
  *  Change the weights here and both the order and the grouping follow. Popularity
  *  only ever breaks ties between otherwise equal titles; it never lifts a wrong
@@ -40,6 +43,7 @@ export const WEIGHTS = {
   artist: 2,         // × fraction of artist tokens found (only when the query names one)
   extraWord: -0.6,   // per title word beyond the query, capped at 3
   popularity: 0.3,   // × log10(views + 1)
+  catalog: 16,       // built-in songs already passed the fuzzy catalog lookup; they lead
 };
 
 export function scoreResult(norm: NormalizedName, q: NormalizedQuery, views = 0): number {
@@ -77,7 +81,8 @@ export function rankResults(results: SearchResult[], query: string): RankedResul
   return results
     .map((r) => {
       const norm = normalizeName(r.name);
-      return { ...r, norm, score: scoreResult(norm, q, r.views ?? 0) };
+      const bonus = r.source === 'catalog' ? WEIGHTS.catalog : 0;
+      return { ...r, norm, score: bonus + scoreResult(norm, q, r.views ?? 0) };
     })
     .sort((a, b) => b.score - a.score || (b.views ?? 0) - (a.views ?? 0));
 }

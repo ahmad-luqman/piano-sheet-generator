@@ -42,8 +42,9 @@ const BRACKET_RE = /\s*[([{][^)\]}]*[)\]}]/g;
 const TRAILING_K_RE = /\s+k$/i;
 // Version suffixes: "-1", " 2", "v2", "(2)", "_ht" (sequencer initials), "part1".
 const VERSION_RE = /[\s_-]+(?:v|ver|version|part|pt)?\s*\d{1,2}$/i;
-// Sequencer tags glued to the end after a space: "letitsnow_ht", "S1006_10".
-const GLUED_TAG_RE = /\s+[a-z0-9]*_[a-z0-9_]*$/i;
+// Sequencer tags glued to the end after a space: "letitsnow_ht", "S1006_10". The suffix after the
+// underscore must be short letters or carry a digit, so "Tom Sawyer_live" keeps its last word.
+const GLUED_TAG_RE = /\s+[a-z0-9]*_(?:[a-z]{1,3}|[a-z0-9_]*\d[a-z0-9_]*)$/i;
 
 /** Strip the extension, bracketed metadata, karaoke flags and version suffixes from a raw file name. */
 export function cleanFileName(raw: string): string {
@@ -54,7 +55,7 @@ export function cleanFileName(raw: string): string {
   // "No. 25" / "Opus.82" are part of a title; only strip a trailing number when it follows a separator
   // and the preceding word is not a numbering word.
   const m = VERSION_RE.exec(s);
-  if (m && !/(no|op|opus|nr|number|vol|book|bwv|k|kv|hob|d)\.?\s*$/i.test(s.slice(0, m.index))) {
+  if (m && !/\b(no|op|opus|nr|number|vol|book|bwv|k|kv|hob|d)\.?\s*$/i.test(s.slice(0, m.index))) {
     s = s.slice(0, m.index);
   }
   return s.trim();
@@ -95,7 +96,7 @@ export interface NormalizedQuery {
   tokens: string[];
   /** Tokens minus stopwords; falls back to all tokens when that would drop most of the query. */
   significant: string[];
-  /** When the user typed "title - artist" or "title by artist", the split parts. */
+  /** When the user typed "title - artist", the split parts. ("by" is not a separator: "Stand By Me".) */
   title?: string;
   artist?: string;
 }
@@ -104,7 +105,7 @@ export function normalizeQuery(q: string): NormalizedQuery {
   const raw = q.trim();
   let title: string | undefined;
   let artist: string | undefined;
-  let m = /^(.+?)\s+(?:by|-|–|—)\s+(.+)$/i.exec(raw);
+  const m = /^(.+?)\s+[-–—]\s+(.+)$/.exec(raw);
   if (m) { title = fold(m[1]); artist = fold(m[2]); }
   const folded = fold(raw);
   const tokens = folded ? folded.split(' ') : [];

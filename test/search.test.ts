@@ -28,6 +28,9 @@ describe('normalize: file names', () => {
     expect(cleanFileName('Bagatelle No. 25.mid')).toBe('Bagatelle No. 25');
     expect(cleanFileName('Let me be Alone at the Brook, Opus.82.mid')).toBe('Let me be Alone at the Brook, Opus.82');
     expect(cleanFileName('Let It Go.mid')).toBe('Let It Go');
+    expect(cleanFileName('Piano-2.mid')).toBe('Piano');
+    expect(cleanFileName('Rock-1.mid')).toBe('Rock');
+    expect(cleanFileName('Rush - Tom Sawyer_live.mid')).toBe('Rush - Tom Sawyer_live');
   });
   it('splits artist and title in the common upload formats', () => {
     expect(splitArtistTitle('THE BEATLES.Let it be')).toEqual({ artist: 'THE BEATLES', title: 'Let it be' });
@@ -48,10 +51,11 @@ describe('normalize: queries', () => {
   it('keeps all tokens when every word is a stopword', () => {
     expect(normalizeQuery('Let It Be').significant).toEqual(['let', 'it', 'be']);
   });
-  it('drops stopwords otherwise and splits "title by artist"', () => {
-    const q = normalizeQuery('Let It Be by The Beatles');
+  it('drops stopwords otherwise and splits "title - artist" but never on "by"', () => {
+    const q = normalizeQuery('Let It Be - The Beatles');
     expect(q.title).toBe('let it be');
     expect(q.artist).toBe('the beatles');
+    expect(normalizeQuery('Stand By Me').title).toBeUndefined();
     expect(normalizeQuery('The Sound of Silence').significant).toEqual(['sound', 'silence']);
     expect(normalizeQuery('the beatles').significant).toEqual(['beatles']);
   });
@@ -68,6 +72,7 @@ describe('query variants', () => {
   });
   it('adds a title-plus-artist variant when the user separates them', () => {
     expect(buildQueryVariants('let it be - beatles')).toContainEqual({ q: '"let it be" beatles', page: 0 });
+    expect(buildQueryVariants('let it be by the beatles')).toContainEqual({ q: '"let it be" the beatles', page: 0 });
   });
   it('does not quote a single word', () => {
     expect(buildQueryVariants('beatles').some((x) => x.q.includes('"'))).toBe(false);
@@ -120,10 +125,20 @@ describe('ranking against real bitmidi responses', () => {
     }
   });
 
-  it('keeps catalog entries as their own cards', () => {
+  it('keeps catalog entries as their own cards, ahead of popular uploads', () => {
     const cat: SearchResult = { id: 'fur-elise', name: 'Für Elise (opening) — Ludwig van Beethoven', downloadUrl: '', source: 'catalog' };
-    const groups = groupResults(rankResults([cat, ...records(furElise)], 'fur elise'));
-    expect(groups.filter((g) => g.best.source === 'catalog').length).toBe(1);
+    for (const q of ['fur elise', 'bagatelle']) {
+      const groups = groupResults(rankResults([...records(furElise), cat], q));
+      expect(groups.filter((g) => g.best.source === 'catalog').length).toBe(1);
+      expect(groups[0].best.source, q).toBe('catalog');
+    }
+  });
+
+  it('does not treat "by" inside a title as an artist separator', () => {
+    const mk = (id: string, name: string, views: number): SearchResult => ({ id, name, downloadUrl: '', views, source: 'bitmidi' });
+    const ranked = rankResults([mk('1', 'Stand.mid', 90000), mk('2', 'Ben E King - Stand By Me.mid', 3000), mk('3', 'Stand-By-Me-2.mid', 100)], 'stand by me');
+    expect(ranked[0].norm.title).toBe('stand by me');
+    expect(ranked[ranked.length - 1].id).toBe('1');
   });
 });
 
