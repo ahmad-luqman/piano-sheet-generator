@@ -117,6 +117,7 @@ export class Player {
     // Scheduling starts from the (possibly negative) count-in position so the clicks are heard.
     this.scheduledUpTo = this.position;
     this.nextClickBeat = Math.ceil(this.position - 1e-6);
+    if (this.timed) this.updateOpen(); // an onset on the first beat must be open before the first tick
     this.timer = window.setInterval(() => this.tick(), 20);
     this.cb.onStateChange?.(true);
   }
@@ -193,7 +194,7 @@ export class Player {
 
     const end = this.loop ? this.loop.end : this.totalBeats;
     if (this.position >= end) {
-      if (this.loop) { this.closeOpen(true); this.cb.onLoopRestart?.(); this.seek(this.loop.start); this.scheduledUpTo = this.position; }
+      if (this.loop) { this.closeOpen(true); this.seek(this.loop.start); this.scheduledUpTo = this.position; this.cb.onLoopRestart?.(); if (this.timed) this.updateOpen(); }
       else { this.closeOpen(true); this.pause(); this.seek(0); this.cb.onEnd?.(); return; }
     }
     this.cb.onPosition?.(this.position);

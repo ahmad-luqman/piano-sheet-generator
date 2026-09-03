@@ -109,7 +109,10 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 .bs-bar.two-hands { min-height: 132px; }
 .bs-bar.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .bs-bar.looped { background: #1b1f36; }
-.bs-num { position: absolute; top: 4px; left: 8px; font-size: 11px; color: var(--muted); }
+.bs-num { position: absolute; top: 4px; left: 8px; font-size: 11px; color: var(--muted); padding: 0 4px; border-radius: 5px; }
+.bs-num.good { background: #14532d; color: #bbf7d0; }
+.bs-num.warn { background: #713f12; color: #fde68a; }
+.bs-num.bad { background: #7f1d1d; color: #fecaca; }
 .bs-chords { position: absolute; top: 2px; left: 6px; right: 6px; height: 18px; }
 .bs-chord { position: absolute; transform: translateX(6px); font-weight: 700; font-size: 13px; color: #c7d2fe; padding-left: 20px; }
 .bs-chord:first-child { padding-left: 0; transform: translateX(22px); }
@@ -139,6 +142,21 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 .adv .abcjs-staff path, .adv .abcjs-bar path { stroke: var(--muted); }
 .adv .adv-active { fill: #facc15 !important; }
 .adv .abcjs-note, .adv .abcjs-rest { cursor: pointer; }
+
+/* progress panel */
+.progress { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); padding: 10px 12px; margin-bottom: 10px; font-size: 12.5px; }
+.progress:empty { display: none; }
+.progress h3 { margin: 0 0 6px; font-size: 13px; display: flex; justify-content: space-between; align-items: baseline; }
+.progress h3 .muted { font-weight: 400; }
+.progress .pg-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 4px 0; color: #c5cadb; line-height: 1.4; }
+.progress .pg-next { border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; margin: 8px 0; background: var(--panel); }
+.progress .pg-next b { display: block; margin-bottom: 3px; }
+.progress .pg-next .pg-row { margin-top: 6px; }
+.progress .pg-today .btn { font-size: 12px; }
+.progress .pg-journal { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; color: #c5cadb; font-style: italic; }
+.progress .pg-streak { display: inline-flex; gap: 3px; }
+.progress .pg-streak i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); display: inline-block; }
+.progress .pg-streak i.on { background: #22c55e; }
 
 /* steps */
 .steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }

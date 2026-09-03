@@ -10,15 +10,20 @@ import { GroupCard } from './versions';
 import { esc } from './dom';
 import { BeginnerSheet } from '../sheet/beginner';
 import { AdvancedSheet } from '../sheet/advanced';
-import { generateSteps, type Step } from '../sheet/steps';
+import { generateSteps, type Step, type StepAction } from '../sheet/steps';
 import { createPiano, type PianoView } from '../piano';
 import { AudioEngine } from '../audio/engine';
 import { InputBus } from '../input/bus';
 import { ComputerKeyboard } from '../input/keyboard';
 import { WebMidiInput } from '../input/webmidi';
-import { Player, type Hands, type PlayMode } from '../practice/player';
+import { Player, type Hands, type PlayMode, type StepResult } from '../practice/player';
 import { Preview } from '../practice/preview';
-import { chooseAccompaniment, enrichSteps, explainChord, explainVersions, getApiKey, setApiKey, suggestSearchTerms } from '../llm/claude';
+import { scoreAttempt, type AttemptMeta, type AttemptScore } from '../practice/score';
+import { barQuality } from '../practice/score';
+import { dailySet, ProgressStore, recordAttempt, scaffoldLevel, songKey, type SongProgress, type StageProgress } from '../practice/progress';
+import { handsNeeded, nextAction, type NextAction } from '../practice/next';
+import { ProgressPanel } from './progress';
+import { chooseAccompaniment, diagnoseErrors, enrichSteps, explainChord, explainVersions, getApiKey, setApiKey, suggestSearchTerms, writeJournal } from '../llm/claude';
 
 const $ = <T extends HTMLElement>(sel: string): T => {
   const el = document.querySelector<T>(sel);
@@ -52,6 +57,13 @@ export class App {
   private versionSort: VersionSort = 'best';
   private cards: GroupCard[] = [];
   private lastFeedbackTimers = new Map<number, number>();
+  private store = new ProgressStore();
+  private progressPanel: ProgressPanel;
+  private attempt: { meta: AttemptMeta; results: StepResult[]; startedMs: number } | null = null;
+  private lastScore: AttemptScore | null = null;
+  private next: NextAction | null = null;
+  private diagnosis: string | undefined;
+  private panelBusy: 'diagnose' | 'journal' | undefined;
 
   constructor(_root: HTMLElement) {
     if (import.meta.env.DEV) (window as any).__app = this;
@@ -62,8 +74,16 @@ export class App {
       onPosition: (b) => this.onPosition(b),
       onWaiting: (req) => this.onWaiting(req),
       onFeedback: (midi, ok) => this.onFeedback(midi, ok),
-      onStateChange: (playing) => { $('#btn-play').textContent = playing ? '❚❚ Pause' : '▶ Play'; },
+      onStateChange: (playing) => { $('#btn-play').textContent = playing ? '❚❚ Pause' : '▶ Play'; if (playing) this.beginAttempt(); else this.finishAttempt(); },
       onEnd: () => this.toast('End of piece. Nice work!'),
+      onStepResult: (r) => this.onStepResult(r),
+      onLoopRestart: () => { this.finishAttempt(); this.beginAttempt(); },
+    });
+    this.progressPanel = new ProgressPanel($('#progress'), {
+      run: (a) => this.runAction(a),
+      showAllAids: () => { this.applyAids(0); this.renderProgress(); },
+      diagnose: () => this.diagnose(),
+      journal: () => this.journal(),
     });
     this.keyboard = new ComputerKeyboard(this.bus, (t) => t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement);
     this.midi = new WebMidiInput(this.bus);
@@ -154,6 +174,8 @@ export class App {
     });
     $<HTMLInputElement>('#api-key').addEventListener('change', (e) => setApiKey((e.target as HTMLInputElement).value.trim() || null));
     $<HTMLInputElement>('#opt-fingers').addEventListener('change', (e) => this.beginner.setOptions({ showFingers: (e.target as HTMLInputElement).checked }));
+    $<HTMLInputElement>('#opt-letters').addEventListener('change', (e) => this.beginner.setOptions({ showLetters: (e.target as HTMLInputElement).checked }));
+    $<HTMLInputElement>('#opt-falling').addEventListener('change', (e) => this.piano.setNotes((e.target as HTMLInputElement).checked ? (this.level?.notes ?? []) : []));
     $<HTMLInputElement>('#opt-octaves').addEventListener('change', (e) => this.beginner.setOptions({ showOctaves: (e.target as HTMLInputElement).checked }));
     $<HTMLSelectElement>('#lh-pattern').addEventListener('change', (e) => void this.choosePattern((e.target as HTMLSelectElement).value));
     document.addEventListener('click', (e) => { const pop = $('#chord-pop'); if (!pop.hidden && !(e.target as HTMLElement).closest('#chord-pop, .bs-chord')) pop.hidden = true; });
@@ -323,17 +345,148 @@ export class App {
     $('#lh-pattern-wrap').hidden = id !== 5;
     $<HTMLOptionElement>('#lh-pattern option[value="auto"]').textContent = `Auto (${PATTERN_META[defaultPattern(this.arr.timeSig, this.arr.bpm)].name.toLowerCase()})`;
     this.beginner.render(this.arr, level);
+    this.applyAids(scaffoldLevel(this.stage()));
     this.beginner.onSeek = (b) => this.seek(b);
     this.beginner.onChordClick = (c, bar, x, y) => this.showChordPop(c, bar, x, y);
     this.advanced.onSeek = (b) => this.seek(b);
     if (this.sheetTab === 'advanced') this.advanced.render(this.arr, level); else this.advancedDirty = true;
-    this.piano.setNotes(level.notes);
+    this.piano.setNotes($<HTMLInputElement>('#opt-falling').checked ? level.notes : []);
     if (level.notes.length) this.piano.setFocusRange(Math.min(...level.notes.map((n) => n.midi)), Math.max(...level.notes.map((n) => n.midi)));
     this.player.load(level, this.arr.bpm, this.arr.beatsPerBar);
     this.player.seek(Math.min(beat, this.player.duration));
     if (this.player.countInBeats) this.player.countInBeats = this.arr.beatsPerBar;
+    this.diagnosis = undefined; this.lastScore = null;
+    this.renderProgress();
     this.renderSteps();
     if (wasPlaying) this.player.play();
+  }
+
+  // ───────────────────────── progress ─────────────────────────
+
+  private songProgressKey(): string | null { return this.arr && this.song ? songKey(this.arr, this.song) : null; }
+  private stage(): StageProgress | undefined { const k = this.songProgressKey(); return k ? this.store.peek(k, this.levelId) : undefined; }
+  private songProgress(): SongProgress | undefined { const k = this.songProgressKey(); return k ? this.store.load()[k] : undefined; }
+
+  private beginAttempt(): void {
+    if (!this.arr || this.player.mode === 'listen') return;
+    const bpb = this.arr.beatsPerBar;
+    const loop = this.player.loop;
+    const startBar = Math.max(0, Math.floor(Math.max(0, this.player.beat) / bpb));
+    this.attempt = {
+      meta: { level: this.levelId, mode: this.player.mode, hands: this.player.hands, tempoScale: this.player.tempoScale,
+        startBar: loop ? Math.max(startBar, Math.round(loop.start / bpb)) : startBar, endBar: loop ? Math.round(loop.end / bpb) - 1 : this.arr.totalBars - 1,
+        startedAt: new Date().toISOString(), durationSec: 0 },
+      results: [], startedMs: performance.now(),
+    };
+    $('#status').textContent = '';
+  }
+
+  private onStepResult(r: StepResult): void {
+    const a = this.attempt; if (!a) return;
+    a.results.push(r);
+    if (a.meta.mode !== 'rhythm') return;
+    const notes = a.results.reduce((n, x) => n + x.notes.length, 0);
+    const hits = a.results.reduce((n, x) => n + x.notes.filter((y) => y.hit).length, 0);
+    const onTime = a.results.reduce((n, x) => n + x.notes.filter((y) => y.hit && Math.abs(y.offsetSec ?? 1) <= 0.15).length, 0);
+    $('#status').textContent = `${hits}/${notes} notes · ${onTime} on time`;
+  }
+
+  /** Score what was played, fold it into saved progress, and refresh the panel, the steps and the bar heat. */
+  private finishAttempt(): void {
+    const a = this.attempt; this.attempt = null;
+    if (!a || !this.arr || !this.level || a.results.length < 2) return;
+    const bpb = this.arr.beatsPerBar;
+    const level = this.arr.levels[a.meta.level];
+    // A run stopped early is scored on the bars it reached, never as a whole-piece run.
+    const inRange = level.notes.filter((n) => (a.meta.hands === 'both' || n.hand === a.meta.hands) && n.startBeat >= a.meta.startBar * bpb && n.startBeat < (a.meta.endBar + 1) * bpb);
+    const lastBeat = Math.max(...a.results.map((r) => r.beat));
+    const lastNeeded = inRange.length ? Math.max(...inRange.map((n) => n.startBeat)) : 0;
+    if (lastBeat < lastNeeded - 1e-6) a.meta.endBar = Math.floor(lastBeat / bpb);
+    a.meta.durationSec = Math.round((performance.now() - a.startedMs) / 100) / 10;
+    const score = scoreAttempt(a.meta, a.results, level, bpb, this.arr.totalBars);
+    const key = this.songProgressKey()!;
+    const song = this.store.song(key, this.arr.title);
+    const stage = this.store.stage(song, a.meta.level);
+    const before = scaffoldLevel(stage);
+    const outcome = recordAttempt(stage, score, this.arr.sections, handsNeeded(this.arr, a.meta.level));
+    this.store.touch(song);
+    this.lastScore = score; this.diagnosis = undefined;
+    const bits = [`notes ${Math.round(score.noteAccuracy * 100)}%`, score.timingAccuracy !== undefined ? `timing ${Math.round(score.timingAccuracy * 100)}%` : '', score.wrong ? `${score.wrong} wrong` : ''].filter(Boolean).join(', ');
+    if (outcome.justEarned) this.toast(`Stage ${a.meta.level} earned! Stage ${Math.min(6, a.meta.level + 1)} is open. (${bits})`);
+    else if (outcome.scaffoldAfter > before) this.toast(`${score.clean ? 'Clean run' : 'Scored'}: ${bits}. Reading aids fade: ${outcome.scaffoldAfter} hidden now.`);
+    else this.toast(`${score.clean ? 'Clean run' : 'Scored'}: ${bits}.`);
+    if (a.meta.level === this.levelId) {
+      if (outcome.scaffoldAfter !== before) this.applyAids(outcome.scaffoldAfter);
+      this.renderProgress();
+      this.renderSteps();
+    }
+  }
+
+  private renderProgress(): void {
+    if (!this.arr) return;
+    const stage = this.stage();
+    this.next = nextAction(this.arr, this.levelId, stage);
+    this.progressPanel.render({
+      arr: this.arr, levelId: this.levelId, stage, song: this.songProgress(), last: this.lastScore ?? undefined, next: this.next,
+      today: dailySet(stage, this.arr.sections), scaffold: scaffoldLevel(stage), diagnosis: this.diagnosis, busy: this.panelBusy,
+    });
+    const heat = new Map<number, number>();
+    for (const [k, b] of Object.entries(stage?.bars ?? {})) { const bar = parseInt(k, 10); heat.set(bar, Math.min(heat.get(bar) ?? 1, barQuality(b))); }
+    this.beginner.setBarScores(heat);
+  }
+
+  /** Scaffold fade-out: 0 = every aid, 1 = no finger numbers, 2 = no letters, 3 = no falling notes. */
+  private applyAids(scaffold: number): void {
+    const fingers = $<HTMLInputElement>('#opt-fingers'), letters = $<HTMLInputElement>('#opt-letters'), falling = $<HTMLInputElement>('#opt-falling');
+    fingers.checked = scaffold < 1; letters.checked = scaffold < 2; falling.checked = scaffold < 3;
+    this.beginner.setOptions({ showFingers: fingers.checked, showLetters: letters.checked });
+    this.piano.setNotes(falling.checked ? (this.level?.notes ?? []) : []);
+  }
+
+  private runAction(a: StepAction): void {
+    if (!this.arr) return;
+    this.player.pause();
+    if (a.level !== this.levelId) this.setLevel(a.level);
+    this.setMode(a.mode);
+    this.setHands(a.hands);
+    this.setTempo(a.tempoScale);
+    if (a.startBar === 0 && a.endBar >= this.arr.totalBars - 1) { this.player.clearLoop(); this.beginner.highlightBars(0, 0, false); $('#btn-loop').classList.remove('active'); }
+    else { this.player.setLoop(a.startBar, a.endBar); this.beginner.highlightBars(a.startBar, a.endBar, true); $('#btn-loop').classList.add('active'); }
+    this.player.seek(a.startBar * this.arr.beatsPerBar);
+    void this.ensureAudio().then(() => this.player.play());
+  }
+
+  private async diagnose(): Promise<void> {
+    if (!this.arr || !this.next) return;
+    const stage = this.stage(); if (!stage) return;
+    if (!getApiKey()) { this.toast('Add your Anthropic API key in Settings (⚙) to ask Claude.', true); $<HTMLDialogElement>('#dlg-settings').showModal(); return; }
+    this.panelBusy = 'diagnose'; this.renderProgress();
+    try {
+      const { candidate, cause } = await diagnoseErrors(this.arr, this.levelId, stage, this.next);
+      this.panelBusy = undefined;
+      this.renderProgress();
+      this.next = { ...candidate, candidates: this.next.candidates };
+      this.diagnosis = cause;
+      this.progressPanel.render({ arr: this.arr, levelId: this.levelId, stage, song: this.songProgress(), last: this.lastScore ?? undefined, next: this.next, today: dailySet(stage, this.arr.sections), scaffold: scaffoldLevel(stage), diagnosis: cause });
+      this.steps = generateSteps(this.arr, this.levelId, { title: this.next.title, reason: cause, action: this.next.action });
+      this.paintSteps();
+    } catch (err) { this.panelBusy = undefined; this.renderProgress(); this.toast(`Could not ask Claude: ${msg(err)}`, true); }
+  }
+
+  private async journal(): Promise<void> {
+    if (!this.arr || !this.next) return;
+    const song = this.songProgress(); const stage = this.stage(); if (!song || !stage) return;
+    if (!getApiKey()) { this.toast('Add your Anthropic API key in Settings (⚙) to ask Claude.', true); $<HTMLDialogElement>('#dlg-settings').showModal(); return; }
+    this.panelBusy = 'journal'; this.renderProgress();
+    try {
+      const today = new Date().toDateString();
+      const attempts = stage.attempts.filter((a) => new Date(a.at).toDateString() === today);
+      const text = await writeJournal(this.arr, this.levelId, attempts.length ? attempts : stage.attempts.slice(-5), this.next);
+      song.journal.push({ at: new Date().toISOString(), text });
+      if (song.journal.length > 10) song.journal.splice(0, song.journal.length - 10);
+      this.store.touch(song);
+    } catch (err) { this.toast(`Could not ask Claude: ${msg(err)}`, true); }
+    finally { this.panelBusy = undefined; this.renderProgress(); }
   }
 
   private advancedDirty = true;
@@ -348,7 +501,9 @@ export class App {
 
   private renderSteps(): void {
     if (!this.arr) return;
-    this.steps = generateSteps(this.arr, this.levelId);
+    const stage = this.stage();
+    const next = stage?.attempts.length && this.next ? { title: this.next.title, reason: this.diagnosis ?? this.next.reason, action: this.next.action } : undefined;
+    this.steps = generateSteps(this.arr, this.levelId, next);
     this.paintSteps();
   }
 
@@ -374,16 +529,7 @@ export class App {
     if (!s.action || !this.arr) return;
     this.currentStep = i;
     document.querySelectorAll('#steps li').forEach((li, j) => li.classList.toggle('current', j === i));
-    const a = s.action;
-    this.player.pause();
-    if (a.level !== this.levelId) this.setLevel(a.level);
-    this.setMode(a.mode);
-    this.setHands(a.hands);
-    this.setTempo(a.tempoScale);
-    if (a.startBar === 0 && a.endBar >= this.arr.totalBars - 1) { this.player.clearLoop(); this.beginner.highlightBars(0, 0, false); $('#btn-loop').classList.remove('active'); }
-    else { this.player.setLoop(a.startBar, a.endBar); this.beginner.highlightBars(a.startBar, a.endBar, true); $('#btn-loop').classList.add('active'); }
-    this.player.seek(a.startBar * this.arr.beatsPerBar);
-    void this.ensureAudio().then(() => this.player.play());
+    this.runAction(s.action);
   }
 
   /** Stage 5 left-hand texture: automatic, one pattern for the whole piece, or Claude's pick per section. */

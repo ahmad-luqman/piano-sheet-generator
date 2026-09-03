@@ -4,6 +4,9 @@ import type { Step } from '../sheet/steps';
 import type { SectionPattern } from '../arrange/levels';
 import { explainChordRuleBased } from '../arrange/theory';
 import { describeVersion, recommendScore, type VersionAnalysis } from '../search/analyze';
+import { barQuality } from '../practice/score';
+import type { AttemptSummary, StageProgress } from '../practice/progress';
+import type { Candidate, NextAction } from '../practice/next';
 
 /**
  * Every call here follows the same rules: the user's own key, opt-in; a rule-based
@@ -263,4 +266,61 @@ export async function explainVersions(title: string, artist: string | undefined,
   const parsed = JSON.parse(textOf(res)) as { versions: { id: string; sentence: string }[] };
   const ids = new Set(analyses.map((a) => a.id));
   return new Map(parsed.versions.filter((v) => ids.has(v.id) && typeof v.sentence === 'string').map((v) => [v.id, v.sentence.trim()]));
+}
+
+// ───────────────────────── error diagnosis (practice) ─────────────────────────
+
+const DIAGNOSIS_SCHEMA = obj({ choice: { type: 'integer' }, cause: { type: 'string' } });
+
+/**
+ * Name the cause of the learner's errors and pick the drill. Code supplies the bar and
+ * hand statistics and a fixed list of candidate actions; the model returns an index
+ * into that list plus one sentence. Anything off the list falls back to the rule's pick.
+ */
+export async function diagnoseErrors(arr: Arrangement, levelId: LevelId, stage: StageProgress, next: NextAction): Promise<{ candidate: Candidate; cause: string }> {
+  const c = client();
+  const bars = Object.entries(stage.bars)
+    .map(([k, b]) => ({ bar: parseInt(k, 10) + 1, hand: k.endsWith('rh') ? 'right' : 'left', quality: Math.round(barQuality(b) * 100), notes: Math.round(b.notes), hits: Math.round(b.hits), wrong: Math.round(b.wrong), onTime: b.timed ? Math.round(100 * b.onTime / b.timed) : null, pauses: Math.round(b.pauses) }))
+    .sort((a, b) => a.quality - b.quality).slice(0, 8);
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 600,
+    output_config: { format: { type: 'json_schema', schema: DIAGNOSIS_SCHEMA }, effort: 'low' },
+    system: systemBlocks(arr,
+      'The learner has practised this piece and the app scored each bar. Say in one plain sentence (at most 25 words) what is causing most of the errors, ' +
+      'then choose the drill from the numbered candidates by its index. Prefer the smallest drill that targets the cause. Use only the statistics given.'),
+    messages: [{ role: 'user', content: JSON.stringify({
+      stage: `${levelId} - ${arr.levels[levelId].name}`,
+      weakestBars: bars,
+      frequentErrors: Object.values(stage.causes).sort((a, b) => b.count - a.count).slice(0, 5).map((x) => ({ where: x.label, bar: x.bar + 1, weight: x.count })),
+      recentAttempts: stage.attempts.slice(-5).map((a) => ({ mode: a.mode, bars: `${a.startBar + 1}-${a.endBar + 1}`, tempo: a.tempoScale, notes: a.noteAccuracy, timing: a.timingAccuracy, wrong: a.wrong, clean: a.clean })),
+      candidates: next.candidates.map((cand, i) => ({ index: i, drill: cand.title, why: cand.reason })),
+    }) }],
+  });
+  checkRefusal(res);
+  const parsed = JSON.parse(textOf(res)) as { choice: number; cause: string };
+  const candidate = Number.isInteger(parsed.choice) && next.candidates[parsed.choice] ? next.candidates[parsed.choice] : next;
+  return { candidate, cause: (typeof parsed.cause === 'string' && parsed.cause.trim()) || candidate.reason };
+}
+
+// ───────────────────────── session journal ─────────────────────────
+
+/** Two sentences at the end of practice: what improved, what to do tomorrow. */
+export async function writeJournal(arr: Arrangement, levelId: LevelId, attempts: AttemptSummary[], next: NextAction): Promise<string> {
+  const c = client();
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 300,
+    output_config: { effort: 'low' },
+    system: systemBlocks(arr,
+      'Write the learner\'s practice journal entry for today: exactly two sentences, warm and specific. First what improved or what they did, second what to do tomorrow, ' +
+      'consistent with the suggested next drill. No headings, no bullet points, no more than 45 words in total.'),
+    messages: [{ role: 'user', content: JSON.stringify({
+      stage: `${levelId} - ${arr.levels[levelId].name}`,
+      attemptsToday: attempts.map((a) => ({ mode: a.mode, bars: `${a.startBar + 1}-${a.endBar + 1}`, tempo: a.tempoScale, notes: a.noteAccuracy, timing: a.timingAccuracy, wrong: a.wrong, clean: a.clean, cause: a.cause })),
+      nextDrill: { title: next.title, reason: next.reason },
+    }) }],
+  });
+  checkRefusal(res);
+  return textOf(res).trim();
 }

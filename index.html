@@ -87,6 +87,7 @@
           <h2>How to play</h2>
           <button id="btn-enrich" class="btn small" title="Rewrite the steps with Claude (needs an API key in Settings)">✨ Coach me</button>
         </div>
+        <div id="progress" class="progress"></div>
         <ol id="steps" class="steps"></ol>
         <details class="side-details">
           <summary>Keyboard shortcuts</summary>
@@ -121,6 +122,8 @@
         <label>Anthropic API key <span class="muted small">(optional, stays in this browser)</span>
           <input id="api-key" type="password" placeholder="sk-ant-…" autocomplete="off" /></label>
         <label><input id="opt-fingers" type="checkbox" checked /> Show finger numbers on the letter sheet</label>
+        <label><input id="opt-letters" type="checkbox" checked /> Show letter names on the letter sheet</label>
+        <label><input id="opt-falling" type="checkbox" checked /> Show falling notes on the piano</label>
         <label><input id="opt-octaves" type="checkbox" /> Show octave numbers on notes</label>
         <label><input id="opt-new" type="checkbox" checked /> Highlight notes added at this stage</label>
         <label><input id="opt-ease" type="checkbox" checked /> Show much harder sections one stage easier</label>

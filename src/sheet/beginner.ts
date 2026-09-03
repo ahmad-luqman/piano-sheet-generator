@@ -2,7 +2,7 @@ import type { Arrangement, Chord, Level, Note } from '../types';
 import { PC_COLORS } from '../piano/types';
 import { pitchClass } from '../arrange/theory';
 
-export interface BeginnerSheetOptions { showFingers: boolean; showOctaves: boolean; barsPerRow: number; highlightNew: boolean }
+export interface BeginnerSheetOptions { showFingers: boolean; showOctaves: boolean; showLetters: boolean; barsPerRow: number; highlightNew: boolean }
 
 /**
  * Letter-notation sheet. Each bar is a beat grid; notes are pills whose width is
@@ -19,7 +19,8 @@ export class BeginnerSheet {
   private activeNotes = new Set<HTMLElement>();
   private activeBar = -1;
   private cursor: HTMLElement | null = null;
-  private opts: BeginnerSheetOptions = { showFingers: true, showOctaves: false, barsPerRow: 4, highlightNew: true };
+  private opts: BeginnerSheetOptions = { showFingers: true, showOctaves: false, showLetters: true, barsPerRow: 4, highlightNew: true };
+  private barScores = new Map<number, number>();
 
   constructor(private container: HTMLElement) {
     this.root = document.createElement('div');
@@ -88,7 +89,7 @@ export class BeginnerSheet {
               el.style.setProperty('--c', PC_COLORS[pitchClass(n.midi)]);
               if (g.length > 1) { el.style.top = `${(i / g.length) * 100}%`; el.style.height = `${100 / g.length}%`; }
               const acc = n.letter.slice(1);
-              el.innerHTML = `<span class="bs-letter">${n.letter[0]}${acc ? `<sup>${acc === '#' ? '♯' : '♭'}</sup>` : ''}${this.opts.showOctaves ? `<sub>${n.octave}</sub>` : ''}</span>` +
+              el.innerHTML = (this.opts.showLetters ? `<span class="bs-letter">${n.letter[0]}${acc ? `<sup>${acc === '#' ? '♯' : '♭'}</sup>` : ''}${this.opts.showOctaves ? `<sub>${n.octave}</sub>` : ''}</span>` : '') +
                 (this.opts.showFingers && n.finger && g.length === 1 ? `<span class="bs-finger">${n.finger}</span>` : '');
               el.title = `${n.letter}${n.octave} · ${hand === 'rh' ? 'right' : 'left'} hand · ${n.durationBeats} beat${n.durationBeats === 1 ? '' : 's'}${n.finger ? ` · finger ${n.finger}` : ''}`;
               lane.appendChild(el);
@@ -103,6 +104,25 @@ export class BeginnerSheet {
       this.root.appendChild(row);
     }
     this.cursor = document.createElement('div'); this.cursor.className = 'bs-cursor'; this.root.appendChild(this.cursor);
+    this.paintBarScores();
+  }
+
+  /** Heat per bar from saved progress: 0..1 quality, absent = not yet played. */
+  setBarScores(scores: Map<number, number>): void {
+    this.barScores = scores;
+    this.paintBarScores();
+  }
+
+  private paintBarScores(): void {
+    this.barEls.forEach((el, i) => {
+      const q = this.barScores.get(i);
+      const num = el.querySelector<HTMLElement>('.bs-num');
+      if (!num) return;
+      num.classList.remove('good', 'warn', 'bad');
+      if (q === undefined) { num.title = ''; return; }
+      num.classList.add(q >= 0.9 ? 'good' : q >= 0.7 ? 'warn' : 'bad');
+      num.title = `${Math.round(q * 100)}% clean in your recent attempts`;
+    });
   }
 
   setPosition(beat: number): void {
