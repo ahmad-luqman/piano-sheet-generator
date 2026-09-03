@@ -1,4 +1,4 @@
-import type { Arrangement, Level, Note } from '../types';
+import type { Arrangement, Chord, Level, Note } from '../types';
 import { PC_COLORS } from '../piano/types';
 import { pitchClass } from '../arrange/theory';
 
@@ -10,6 +10,7 @@ export interface BeginnerSheetOptions { showFingers: boolean; showOctaves: boole
  */
 export class BeginnerSheet {
   onSeek?: (beat: number) => void;
+  onChordClick?: (chord: Chord, bar: number, x: number, y: number) => void;
   private root: HTMLElement;
   private noteEls = new Map<Note, HTMLElement>();
   private barEls: HTMLElement[] = [];
@@ -63,7 +64,8 @@ export class BeginnerSheet {
           const el = document.createElement('span'); el.className = 'bs-chord';
           el.style.left = `${((cs - barStart) / bpb) * 100}%`;
           el.textContent = c.name;
-          el.title = `${c.name}: ${c.pitches.map((p) => noteName(p, level.key.useFlats)).join(' ')}`;
+          el.title = `${c.name}: ${c.pitches.map((p) => noteName(p, level.key.useFlats)).join(' ')} · click for why`;
+          el.addEventListener('click', (e) => { e.stopPropagation(); this.onChordClick?.(c, b, e.clientX, e.clientY); });
           chordsRow.appendChild(el);
         }
         bar.appendChild(chordsRow);

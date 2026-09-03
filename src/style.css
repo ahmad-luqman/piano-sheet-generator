@@ -62,6 +62,10 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 .level-picker button.active { background: var(--accent); color: white; }
 .level-picker button b { display: block; font-size: 12px; color: inherit; }
 .level-picker button span { font-size: 10px; }
+.bs-chord { cursor: pointer; }
+.chord-pop { position: fixed; z-index: 30; max-width: 340px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; box-shadow: 0 12px 30px rgba(0,0,0,0.5); font-size: 13px; line-height: 1.4; }
+.chord-pop b { display: block; margin-bottom: 4px; }
+.chord-pop p { margin: 0 0 8px; }
 .bs-note.new { box-shadow: 0 0 0 2px var(--accent), 0 0 10px var(--accent); }
 .song-bar .level-hint { max-width: 260px; line-height: 1.25; }
 .song-bar .toggle { display: flex; align-items: center; gap: 5px; white-space: nowrap; color: var(--muted); cursor: pointer; }

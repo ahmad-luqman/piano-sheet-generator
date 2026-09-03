@@ -77,3 +77,57 @@ export function quantize(beat: number, grid: number): number {
 export function round3(x: number): number {
   return Math.round(x * 1000) / 1000;
 }
+
+// ───────────────────────── theory on demand (rule-based) ─────────────────────────
+
+const MAJOR_DEGREES: [number, string][] = [[0, 'I'], [2, 'ii'], [4, 'iii'], [5, 'IV'], [7, 'V'], [9, 'vi'], [11, 'vii°']];
+const MINOR_DEGREES: [number, string][] = [[0, 'i'], [2, 'ii°'], [3, 'III'], [5, 'iv'], [7, 'v'], [8, 'VI'], [10, 'VII']];
+const QUALITY_INTERVALS: Record<string, number[]> = {
+  maj: [0, 4, 7], min: [0, 3, 7], dim: [0, 3, 6], aug: [0, 4, 8], '7': [0, 4, 7, 10], maj7: [0, 4, 7, 11], min7: [0, 3, 7, 10],
+};
+
+/** Roman numeral of a chord in the key, or undefined when its root is outside the scale. */
+export function romanNumeral(root: number, quality: string, key: KeyInfo): string | undefined {
+  const degrees = key.mode === 'major' ? MAJOR_DEGREES : MINOR_DEGREES;
+  const offset = ((root - key.tonic) % 12 + 12) % 12;
+  const hit = degrees.find(([o]) => o === offset);
+  if (!hit) return undefined;
+  const base = hit[1].replace('°', '');
+  const minorish = quality === 'min' || quality === 'min7' || quality === 'dim';
+  let numeral = minorish ? base.toLowerCase() : base.toUpperCase();
+  if (quality === 'dim') numeral += '°';
+  if (quality === 'aug') numeral += '+';
+  if (quality === '7' || quality === 'min7' || quality === 'maj7') numeral += '7';
+  return numeral;
+}
+
+/**
+ * Fallback for "why this chord here?": the chord tones, its degree in the key, and which
+ * melody notes in the bar belong to it. Pure text, no model.
+ */
+export function explainChordRuleBased(
+  level: { key: KeyInfo; notes: { midi: number; hand: string; startBeat: number; letter: string }[] },
+  chord: { root: number; quality: string; name: string }, bar: number, beatsPerBar: number,
+): string {
+  const key = level.key;
+  const names = key.useFlats ? PC_NAMES_FLAT : PC_NAMES_SHARP;
+  const intervals = QUALITY_INTERVALS[chord.quality] ?? [0, 4, 7];
+  const tonePcs = new Set(intervals.map((iv) => (chord.root + iv) % 12));
+  const tones = [...tonePcs].map((pc) => names[pc]).join(' ');
+  const numeral = romanNumeral(chord.root, chord.quality, key);
+  const a = bar * beatsPerBar, b = a + beatsPerBar;
+  const melody = level.notes.filter((n) => n.hand === 'rh' && n.startBeat >= a && n.startBeat < b);
+  const letters = [...new Set(melody.map((n) => n.letter))];
+  let text = `${chord.name} is ${tones}${numeral ? `, the ${numeral} chord in ${key.name}` : `, a chord from outside ${key.name}`}.`;
+  if (letters.length === 0) return `${text} No melody note starts in bar ${bar + 1}.`;
+  const inChord = letters.filter((l) => tonePcs.has(pitchClass(nameToPc(l))));
+  const passing = letters.filter((l) => !inChord.includes(l));
+  text += ` In bar ${bar + 1} the melody plays ${letters.join(' ')}: ${inChord.length} of ${letters.length} ${inChord.length === 1 ? 'is a chord tone' : 'are chord tones'}`;
+  text += passing.length ? `, and ${passing.join(', ')} ${passing.length === 1 ? 'is a passing note' : 'are passing notes'}.` : '.';
+  return text;
+}
+
+function nameToPc(letter: string): number {
+  const i = PC_NAMES_SHARP.indexOf(letter);
+  return i >= 0 ? i : Math.max(0, PC_NAMES_FLAT.indexOf(letter));
+}

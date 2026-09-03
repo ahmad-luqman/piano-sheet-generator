@@ -1,6 +1,6 @@
-import type { Arrangement, Hand, Level, LevelId, Note, Song } from '../types';
+import type { Arrangement, Chord, Hand, Level, LevelId, LhPattern, Note, Song } from '../types';
 import { LEVEL_META } from '../types';
-import { buildArrangement, describeChanges } from '../arrange';
+import { buildArrangement, defaultPattern, describeChanges, explainChordRuleBased, PATTERN_META, type SectionPattern } from '../arrange';
 import { parseMidi } from '../midi/parse';
 import { CATALOG, findCatalog, loadCatalogSong } from '../catalog/songs';
 import { downloadMidi, searchBitmidiAll, type SearchResult } from '../search/bitmidi';
@@ -14,7 +14,7 @@ import { InputBus } from '../input/bus';
 import { ComputerKeyboard } from '../input/keyboard';
 import { WebMidiInput } from '../input/webmidi';
 import { Player, type Hands, type PlayMode } from '../practice/player';
-import { enrichSteps, getApiKey, setApiKey, suggestSearchTerms } from '../llm/claude';
+import { chooseAccompaniment, enrichSteps, explainChord, getApiKey, setApiKey, suggestSearchTerms } from '../llm/claude';
 
 const $ = <T extends HTMLElement>(sel: string): T => {
   const el = document.querySelector<T>(sel);
@@ -28,6 +28,8 @@ export class App {
   private levelId: LevelId = 1;
   private transposeEarly = true;
   private easeHard = true;
+  private sectionPatterns: SectionPattern[] | undefined;
+  private patternNote = '';
   private sheetTab: 'beginner' | 'advanced' = 'beginner';
   private steps: Step[] = [];
   private currentStep = -1;
@@ -143,6 +145,8 @@ export class App {
     $<HTMLInputElement>('#api-key').addEventListener('change', (e) => setApiKey((e.target as HTMLInputElement).value.trim() || null));
     $<HTMLInputElement>('#opt-fingers').addEventListener('change', (e) => this.beginner.setOptions({ showFingers: (e.target as HTMLInputElement).checked }));
     $<HTMLInputElement>('#opt-octaves').addEventListener('change', (e) => this.beginner.setOptions({ showOctaves: (e.target as HTMLInputElement).checked }));
+    $<HTMLSelectElement>('#lh-pattern').addEventListener('change', (e) => void this.choosePattern((e.target as HTMLSelectElement).value));
+    document.addEventListener('click', (e) => { const pop = $('#chord-pop'); if (!pop.hidden && !(e.target as HTMLElement).closest('#chord-pop, .bs-chord')) pop.hidden = true; });
     $<HTMLInputElement>('#opt-new').addEventListener('change', (e) => this.beginner.setOptions({ highlightNew: (e.target as HTMLInputElement).checked }));
     $<HTMLInputElement>('#opt-ease').addEventListener('change', (e) => { this.easeHard = (e.target as HTMLInputElement).checked; this.arrange(this.arr?.melodyTrack); });
     $<HTMLInputElement>('#opt-labels').addEventListener('change', (e) => this.piano.setShowLabels((e.target as HTMLInputElement).checked));
@@ -256,6 +260,8 @@ export class App {
     const sel = $<HTMLSelectElement>('#melody-track');
     sel.innerHTML = '';
     for (const t of song.tracks) { const o = document.createElement('option'); o.value = String(t.index); o.textContent = `${t.name} (${t.noteCount} notes)`; sel.appendChild(o); }
+    this.sectionPatterns = undefined; this.patternNote = '';
+    $<HTMLSelectElement>('#lh-pattern').value = 'auto';
     this.arrange();
     if (!this.arr) return;
     const sug = this.arr.suggestedLevel;
@@ -266,7 +272,7 @@ export class App {
   private arrange(melodyTrack?: number): void {
     if (!this.song) return;
     try {
-      this.arr = buildArrangement(this.song, { melodyTrack, transposeEarly: this.transposeEarly, easeHardSections: this.easeHard });
+      this.arr = buildArrangement(this.song, { melodyTrack, transposeEarly: this.transposeEarly, easeHardSections: this.easeHard, sectionPatterns: this.sectionPatterns });
     } catch (err) { this.toast(`Could not arrange: ${msg(err)}`, true); return; }
     $<HTMLSelectElement>('#melody-track').value = String(this.arr.melodyTrack);
     $('#song-title').textContent = this.arr.title;
@@ -294,9 +300,12 @@ export class App {
     const level = this.level!;
     $('#easy-key-info').textContent = level.transpose ? `${level.key.name}, from ${this.arr.key.name}` : '';
     const eased = (level.eased ?? []).map((e) => { const s = this.arr!.sections[e.section]; return `bars ${s.startBar + 1}–${s.endBar + 1} shown as stage ${e.fromLevel}`; });
-    $('#level-changes').textContent = [describeChanges(level), ...eased].filter(Boolean).join(' ').replace(/\. bars/, '. Bars');
+    $('#level-changes').textContent = [describeChanges(level), ...eased, id === 5 ? this.patternNote : ''].filter(Boolean).join(' ').replace(/\. bars/, '. Bars');
+    $('#lh-pattern-wrap').hidden = id !== 5;
+    $<HTMLOptionElement>('#lh-pattern option[value="auto"]').textContent = `Auto (${PATTERN_META[defaultPattern(this.arr.timeSig, this.arr.bpm)].name.toLowerCase()})`;
     this.beginner.render(this.arr, level);
     this.beginner.onSeek = (b) => this.seek(b);
+    this.beginner.onChordClick = (c, bar, x, y) => this.showChordPop(c, bar, x, y);
     this.advanced.onSeek = (b) => this.seek(b);
     if (this.sheetTab === 'advanced') this.advanced.render(this.arr, level); else this.advancedDirty = true;
     this.piano.setNotes(level.notes);
@@ -358,13 +367,57 @@ export class App {
     void this.ensureAudio().then(() => this.player.play());
   }
 
+  /** Stage 5 left-hand texture: automatic, one pattern for the whole piece, or Claude's pick per section. */
+  private async choosePattern(value: string): Promise<void> {
+    if (!this.arr) return;
+    this.patternNote = '';
+    if (value === 'auto') this.sectionPatterns = undefined;
+    else if (value === 'llm') {
+      if (!getApiKey()) { this.toast('Add your Anthropic API key in Settings (⚙) to let Claude pick patterns.', true); $<HTMLSelectElement>('#lh-pattern').value = 'auto'; $<HTMLDialogElement>('#dlg-settings').showModal(); return; }
+      this.toast('Asking Claude which left-hand pattern suits each section…');
+      try {
+        const picks = await chooseAccompaniment(this.arr, defaultPattern(this.arr.timeSig, this.arr.bpm));
+        this.sectionPatterns = picks;
+        this.patternNote = 'Claude chose: ' + picks.filter((p) => this.arr!.sections[p.section].repeatOf === undefined)
+          .map((p) => `${this.arr!.sections[p.section].label} ${PATTERN_META[p.pattern].name.toLowerCase()} (${p.reason})`).join('; ') + '.';
+      } catch (err) { this.toast(`Could not ask Claude: ${msg(err)}`, true); $<HTMLSelectElement>('#lh-pattern').value = 'auto'; this.sectionPatterns = undefined; }
+    } else {
+      const pattern = value as LhPattern;
+      this.sectionPatterns = [{ start: 0, end: this.arr.totalBars * this.arr.beatsPerBar, pattern }];
+    }
+    this.arrange(this.arr.melodyTrack);
+  }
+
+  /** "Why this chord here?" popover: rule-based facts at once, Claude's prose on request. */
+  private showChordPop(chord: Chord, bar: number, x: number, y: number): void {
+    if (!this.arr || !this.level) return;
+    const pop = $('#chord-pop');
+    const facts = explainChordRuleBased(this.level, chord, bar, this.arr.beatsPerBar);
+    pop.innerHTML = `<b>${esc(chord.name)} · bar ${bar + 1}</b><p>${esc(facts)}</p>`;
+    if (getApiKey()) {
+      const b = document.createElement('button'); b.className = 'btn small'; b.textContent = '✨ Explain in plain words';
+      b.addEventListener('click', async () => {
+        b.disabled = true; b.textContent = '✨ Thinking…';
+        try { pop.querySelector('p')!.textContent = await explainChord(this.arr!, this.level!, chord, bar); b.remove(); }
+        catch (err) { this.toast(`Could not ask Claude: ${msg(err)}`, true); b.disabled = false; b.textContent = '✨ Explain in plain words'; }
+      });
+      pop.appendChild(b);
+    }
+    pop.hidden = false;
+    const w = 340, h = pop.offsetHeight || 120;
+    pop.style.left = `${Math.min(x + 8, window.innerWidth - w - 8)}px`;
+    pop.style.top = `${Math.min(y + 8, window.innerHeight - h - 8)}px`;
+  }
+
   private async coach(): Promise<void> {
     if (!this.arr) return;
     if (!getApiKey()) { this.toast('Add your Anthropic API key in Settings (⚙) to use coaching.', true); $<HTMLDialogElement>('#dlg-settings').showModal(); return; }
     const btn = $<HTMLButtonElement>('#btn-enrich');
     btn.disabled = true; btn.textContent = '✨ Thinking…';
     try {
-      this.steps = await enrichSteps(this.arr, this.levelId, this.steps);
+      this.steps = await enrichSteps(this.arr, this.levelId, this.steps, (partial, n, total) => {
+        this.steps = partial; this.paintSteps(); btn.textContent = `✨ ${n} of ${total}…`;
+      });
       this.paintSteps();
       this.toast('Steps rewritten by Claude.');
     } catch (err) { this.toast(`Coaching failed: ${msg(err)}`, true); }

@@ -6,13 +6,14 @@ import { extractMelody, pickMelodyTrack } from './melody';
 import { detectSections } from './sections';
 import { detectKey } from './theory';
 import { suggestStartLevel } from './suggest';
-import { pianoParts } from './levels';
+import { pianoParts, type SectionPattern } from './levels';
 import { easeHardSections, markNewNotes } from './ladder';
 
 export interface ArrangeOptions {
   melodyTrack?: number;      // override the automatic choice
   transposeEarly?: boolean;  // stages 1–3 in the key with the fewest black keys (default true)
   easeHardSections?: boolean; // show much harder sections one stage lower (default true)
+  sectionPatterns?: SectionPattern[]; // stage 5 left-hand texture per section
 }
 
 export function buildArrangement(song: Song, opts: ArrangeOptions = {}): Arrangement {
@@ -20,7 +21,7 @@ export function buildArrangement(song: Song, opts: ArrangeOptions = {}): Arrange
   const melodyTrack = opts.melodyTrack ?? pickMelodyTrack(song);
   const melody = extractMelody(song, melodyTrack);
   const chords = detectChords(song.notes, song.beatsPerBar, song.totalBeats, key);
-  const levels = buildLevels(song, melody, chords, key, melodyTrack, { transposeEarly: opts.transposeEarly });
+  const levels = buildLevels(song, melody, chords, key, melodyTrack, { transposeEarly: opts.transposeEarly, sectionPatterns: opts.sectionPatterns });
   const totalBars = Math.max(1, Math.ceil(song.totalBeats / song.beatsPerBar));
   const sections = detectSections(levels[1].notes, totalBars, song.beatsPerBar);
   if (opts.easeHardSections !== false) easeHardSections(levels, sections, song.beatsPerBar, song.bpm);
