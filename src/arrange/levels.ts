@@ -1,6 +1,7 @@
-import type { Chord, KeyInfo, Level, LevelId, Note, RawNote, Song } from '../types';
+import type { Chord, KeyInfo, Level, LevelId, LhPattern, Note, RawNote, Song } from '../types';
 import { LEVEL_META } from '../types';
-import { chordAt, voiceChord } from './chords';
+import { chordAt } from './chords';
+import { bassLine, blockChords, defaultPattern, fifths, lhNotes, lhNotesBySection } from './patterns';
 import { quantize, round3, spell } from './theory';
 
 function toNote(n: RawNote, hand: Note['hand'], key: KeyInfo): Note {
@@ -68,29 +69,6 @@ export function simplifyMelodyForBeginner(melody: RawNote[], grid = 0.5): RawNot
   return out.filter((n) => n.durationBeats > 0);
 }
 
-/** Level 2 left hand: one root note per chord, held for the chord's duration. */
-export function bassLine(chords: Chord[], low = 41): RawNote[] {
-  return chords.map((c) => ({
-    midi: voiceChord(c.root, c.quality, low, 1)[0],
-    startBeat: c.startBeat, durationBeats: c.durationBeats, velocity: 0.7, track: -1,
-  }));
-}
-
-/** Level 3 left hand: root-position triads on each chord change, plus a repeat on beat 3 in 4/4 (or the downbeat of every bar the chord spans). */
-export function blockChords(chords: Chord[], beatsPerBar: number, low = 48): RawNote[] {
-  const out: RawNote[] = [];
-  const hitEvery = beatsPerBar >= 4 ? beatsPerBar / 2 : beatsPerBar;
-  for (const c of chords) {
-    const pitches = voiceChord(c.root, c.quality, low, 3);
-    for (let t = c.startBeat; t < c.startBeat + c.durationBeats - 1e-6; t += hitEvery) {
-      // Align to the hit grid (chord changes at a half bar still get a hit at the next grid point).
-      const dur = Math.min(hitEvery, c.startBeat + c.durationBeats - t);
-      for (const p of pitches) out.push({ midi: p, startBeat: t, durationBeats: dur * 0.95, velocity: 0.6, track: -1 });
-    }
-  }
-  return out;
-}
-
 /** Assign hands to the original notes: by track name if possible, else split at middle C. */
 export function assignHandsOriginal(song: Song, melodyTrack: number): { rh: RawNote[]; lh: RawNote[] } {
   const named = song.tracks.filter((t) => /left|lh|bass/i.test(t.name)).map((t) => t.index);
@@ -116,23 +94,41 @@ export function assignHandsOriginal(song: Song, melodyTrack: number): { rh: RawN
   return { rh: song.notes.filter((n) => n.midi >= 60), lh: song.notes.filter((n) => n.midi < 60) };
 }
 
+export interface SectionPattern { start: number; end: number; pattern: LhPattern }
+
+export interface LevelOptions {
+  /** Stage 5 left-hand texture per section; defaults to `defaultPattern` for the whole piece. */
+  sectionPatterns?: SectionPattern[];
+}
+
+/**
+ * The ladder. Stages 1–3 share the simplified melody; 4–5 use the full melody rhythm.
+ * Each stage adds exactly one left-hand skill over the stage below it.
+ */
 export function buildLevels(
-  song: Song, melody: RawNote[], chords: Chord[], key: KeyInfo, melodyTrack: number,
+  song: Song, melody: RawNote[], chords: Chord[], key: KeyInfo, melodyTrack: number, opts: LevelOptions = {},
 ): Record<LevelId, Level> {
-  const l1Melody = simplifyMelodyForBeginner(melody, 0.5);
-  const l3Melody = simplifyMelodyForBeginner(melody, 0.25);
-  const mk = (id: LevelId, rh: RawNote[], lh: RawNote[]): Level => ({
-    id, ...LEVEL_META[id],
+  const easyMelody = simplifyMelodyForBeginner(melody, 0.5);
+  const fullMelody = simplifyMelodyForBeginner(melody, 0.25);
+  const bpb = song.beatsPerBar;
+  const mk = (id: LevelId, rh: RawNote[], lh: RawNote[], lhPattern?: LhPattern): Level => ({
+    id, ...LEVEL_META[id], key, chords, transpose: 0, lhPattern,
     notes: [...rh.map((n) => toNote(n, 'rh', key)), ...lh.map((n) => toNote(n, 'lh', key))]
       .sort((a, b) => a.startBeat - b.startBeat || a.midi - b.midi),
   });
+  const pattern = defaultPattern(song.timeSig, song.bpm);
+  const stage5 = opts.sectionPatterns?.length
+    ? lhNotesBySection(opts.sectionPatterns, chords, bpb)
+    : lhNotes(pattern, chords, bpb);
   const orig = assignHandsOriginal(song, melodyTrack);
   return {
-    1: mk(1, l1Melody, []),
-    2: mk(2, l1Melody, bassLine(chords)),
-    3: mk(3, l3Melody, blockChords(chords, song.beatsPerBar)),
-    4: mk(4, orig.rh, orig.lh),
+    1: mk(1, easyMelody, []),
+    2: mk(2, easyMelody, bassLine(chords), 'bass'),
+    3: mk(3, easyMelody, fifths(chords, bpb), 'fifths'),
+    4: mk(4, fullMelody, blockChords(chords, bpb), 'block'),
+    5: mk(5, fullMelody, stage5, opts.sectionPatterns?.length ? undefined : pattern),
+    6: mk(6, orig.rh, orig.lh),
   };
 }
 
-export { chordAt };
+export { chordAt, bassLine, blockChords };

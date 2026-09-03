@@ -71,14 +71,17 @@ describe('sections', () => {
 
 describe('catalog end to end', () => {
   for (const entry of CATALOG) {
-    it(`builds all four levels for ${entry.title}`, () => {
+    it(`builds all six stages for ${entry.title}`, () => {
       const song = loadCatalogSong(entry);
       const arr = buildArrangement(song);
       expect(arr.totalBars).toBeGreaterThan(0);
       expect(arr.levels[1].notes.every((n) => n.hand === 'rh')).toBe(true);
       expect(arr.levels[2].notes.some((n) => n.hand === 'lh')).toBe(true);
-      expect(arr.levels[3].notes.filter((n) => n.hand === 'lh').length).toBeGreaterThan(arr.levels[2].notes.filter((n) => n.hand === 'lh').length);
-      expect(arr.levels[4].notes.length).toBe(song.notes.length);
+      const lh = (id: 1 | 2 | 3 | 4 | 5 | 6) => arr.levels[id].notes.filter((n) => n.hand === 'lh').length;
+      expect(lh(3)).toBeGreaterThan(lh(2));
+      expect(lh(4)).toBeGreaterThan(lh(3));
+      expect(lh(5)).toBeGreaterThan(0);
+      expect(arr.levels[6].notes.length).toBe(song.notes.length);
       expect(arr.chords.length).toBeGreaterThan(0);
       for (const n of arr.levels[1].notes) expect(n.finger).toBeGreaterThanOrEqual(1);
     });

@@ -61,15 +61,30 @@ export interface Note {
   letter: string;                // "C", "F#", "Bb" — spelled for the key
   octave: number;                // scientific pitch octave (C4 = middle C)
   velocity: number;
+  isNew?: boolean;               // not present one stage lower ("what changed")
 }
 
-export type LevelId = 1 | 2 | 3 | 4;
+/** Six stages: one new left-hand skill per step, so no stage is a cliff. */
+export type LevelId = 1 | 2 | 3 | 4 | 5 | 6;
+
+/** Left-hand accompaniment textures, easiest first. `bass` and `block` are stages 2 and 4; the rest are stage 5 choices. */
+export type LhPattern = 'bass' | 'fifths' | 'block' | 'broken' | 'alberti' | 'waltz';
+
+export interface EasedSection {
+  section: number;               // index into Arrangement.sections
+  fromLevel: LevelId;            // the stage whose notes were used instead
+}
 
 export interface Level {
   id: LevelId;
   name: string;
   description: string;
   notes: Note[];                 // both hands, sorted by startBeat
+  key: KeyInfo;                  // the key these notes are in (may differ from the piece when transposed)
+  chords: Chord[];               // chords in this level's key
+  transpose: number;             // semitones added to the original pitches (0 = original key)
+  lhPattern?: LhPattern;         // accompaniment texture of the left hand, when generated
+  eased?: EasedSection[];        // sections rendered one stage lower because they were much harder
 }
 
 export interface Section {
@@ -91,12 +106,16 @@ export interface Arrangement {
   levels: Record<LevelId, Level>;
   sections: Section[];
   melodyTrack: number;
+  partnerTrack?: number;         // the track paired with the melody as the original left hand
   tracks: TrackInfo[];
+  suggestedLevel?: { level: LevelId; reason: string };
 }
 
 export const LEVEL_META: Record<LevelId, { name: string; description: string }> = {
   1: { name: 'Melody', description: 'Right hand only. One note at a time, simplified rhythm.' },
-  2: { name: 'Melody + Bass', description: 'Right hand melody with one left-hand bass note per chord.' },
-  3: { name: 'Melody + Chords', description: 'Right hand melody with left-hand block chords.' },
-  4: { name: 'Original', description: 'The arrangement exactly as written in the file.' },
+  2: { name: '+ Bass', description: 'Melody with one left-hand bass note per chord.' },
+  3: { name: '+ Fifths', description: 'Melody with a two-note root-and-fifth in the left hand.' },
+  4: { name: '+ Chords', description: 'Full melody rhythm with left-hand block chords.' },
+  5: { name: '+ Pattern', description: 'Full melody with a moving left hand: broken chord, Alberti or waltz bass by meter.' },
+  6: { name: 'Original', description: 'The melody track and its piano partner exactly as written in the file.' },
 };

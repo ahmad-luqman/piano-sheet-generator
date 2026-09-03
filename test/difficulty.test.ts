@@ -53,9 +53,9 @@ describe('difficulty fingerprint', () => {
   it('rates a Level 1 melody easier than the original', () => {
     const arr = buildArrangement(song('fur-elise'));
     const l1 = fingerprint(arr.levels[1].notes, arr.bpm);
-    const l4 = fingerprint(arr.levels[4].notes, arr.bpm);
-    expect(l1.density.score).toBeLessThanOrEqual(l4.density.score);
-    expect(l1.overall).toBeLessThanOrEqual(l4.overall);
+    const l6 = fingerprint(arr.levels[6].notes, arr.bpm);
+    expect(l1.density.score).toBeLessThanOrEqual(l6.density.score);
+    expect(l1.overall).toBeLessThanOrEqual(l6.overall);
   });
   it('describes with a level word first', () => {
     expect(describeFingerprint(fpOf('twinkle'))[0]).toBe('beginner');

@@ -107,7 +107,7 @@ export class App {
     document.addEventListener('click', (e) => { if (!(e.target as HTMLElement).closest('#results, #search-form')) $('#results').hidden = true; });
 
     const picker = $('#level-picker');
-    for (const id of [1, 2, 3, 4] as LevelId[]) {
+    for (const id of [1, 2, 3, 4, 5, 6] as LevelId[]) {
       const b = document.createElement('button');
       b.innerHTML = `<b>${id}</b><span>${LEVEL_META[id].name}</span>`;
       b.title = LEVEL_META[id].description;

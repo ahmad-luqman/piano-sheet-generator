@@ -16,7 +16,7 @@ export function buildArrangement(song: Song, opts: ArrangeOptions = {}): Arrange
   const melody = extractMelody(song, melodyTrack);
   const chords = detectChords(song.notes, song.beatsPerBar, song.totalBeats, key);
   const levels = buildLevels(song, melody, chords, key, melodyTrack);
-  for (const id of [1, 2, 3] as const) suggestFingers(levels[id].notes);
+  for (const id of [1, 2, 3, 4, 5] as const) suggestFingers(levels[id].notes);
   const totalBars = Math.max(1, Math.ceil(song.totalBeats / song.beatsPerBar));
   const sections = detectSections(levels[1].notes, totalBars, song.beatsPerBar);
   return {
@@ -31,4 +31,5 @@ export * from './melody';
 export * from './levels';
 export * from './sections';
 export * from './fingers';
+export * from './patterns';
 export * from './difficulty';
