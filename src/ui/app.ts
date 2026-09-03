@@ -254,7 +254,10 @@ export class App {
     sel.innerHTML = '';
     for (const t of song.tracks) { const o = document.createElement('option'); o.value = String(t.index); o.textContent = `${t.name} (${t.noteCount} notes)`; sel.appendChild(o); }
     this.arrange();
-    this.toast(`Loaded “${song.title}”. ${song.tracks.length} track${song.tracks.length === 1 ? '' : 's'}, ${this.arr!.totalBars} bars.`);
+    if (!this.arr) return;
+    const sug = this.arr.suggestedLevel;
+    if (sug) this.setLevel(sug.level, true);
+    this.toast(`Loaded “${song.title}”. ${song.tracks.length} track${song.tracks.length === 1 ? '' : 's'}, ${this.arr.totalBars} bars.${sug ? ` Starting at stage ${sug.level}.` : ''}`);
   }
 
   private arrange(melodyTrack?: number): void {
@@ -265,6 +268,11 @@ export class App {
     $<HTMLSelectElement>('#melody-track').value = String(this.arr.melodyTrack);
     $('#song-title').textContent = this.arr.title;
     $('#song-info').textContent = `${this.arr.key.name} · ${this.arr.bpm} bpm · ${this.arr.timeSig.num}/${this.arr.timeSig.den} · ${this.arr.totalBars} bars · ${this.song.source}`;
+    const sug = this.arr.suggestedLevel;
+    $('#level-hint').textContent = sug ? `Suggested start: stage ${sug.level}; ${sug.reason}.` : '';
+    const partner = this.arr.partnerTrack !== undefined ? this.song.tracks.find((t) => t.index === this.arr!.partnerTrack) : undefined;
+    document.querySelector<HTMLButtonElement>('#level-picker [data-level="6"]')!.title = partner && this.song.tracks.length > 2
+      ? `${LEVEL_META[6].description} Left hand: “${partner.name}”.` : LEVEL_META[6].description;
     this.setLevel(this.levelId, true);
   }
 

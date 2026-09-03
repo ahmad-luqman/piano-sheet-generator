@@ -70,29 +70,47 @@ export function simplifyMelodyForBeginner(melody: RawNote[], grid = 0.5): RawNot
   return out.filter((n) => n.durationBeats > 0);
 }
 
-/** Assign hands to the original notes: by track name if possible, else split at middle C. */
+/**
+ * Stage 6, "original piano parts": the melody track in the right hand and one partner
+ * track in the left. On a two-track piano file that is simply the two tracks. On a band
+ * MIDI the partner is the most piano-like accompaniment (polyphonic, well covered, below
+ * the melody, or named as such), never every remaining track, so drums, strings and
+ * guitars stay out of the learner's left hand.
+ */
+export function pianoParts(song: Song, melodyTrack: number): { rh: RawNote[]; lh: RawNote[]; partnerTrack?: number } {
+  const tracks = song.tracks;
+  const byTrack = (idx: number[]) => song.notes.filter((n) => idx.includes(n.track));
+  if (tracks.length <= 1) return { rh: song.notes.filter((n) => n.midi >= 60), lh: song.notes.filter((n) => n.midi < 60) };
+  const namedLeft = tracks.filter((t) => /\b(left|lh|l\.h)\b/i.test(t.name) || /bass/i.test(t.name) && tracks.length === 2).map((t) => t.index);
+  const namedRight = tracks.filter((t) => /\b(right|rh|r\.h)\b/i.test(t.name) || /melod|lead/i.test(t.name)).map((t) => t.index);
+  if (tracks.length === 2) {
+    const [a, b] = tracks;
+    let lower = a.meanPitch < b.meanPitch ? a.index : b.index;
+    if (namedLeft.length) lower = namedLeft[0];
+    else if (namedRight.length) lower = namedRight[0] === a.index ? b.index : a.index;
+    return { rh: byTrack([lower === a.index ? b.index : a.index]), lh: byTrack([lower]), partnerTrack: lower };
+  }
+  const mel = tracks.find((t) => t.index === melodyTrack) ?? tracks[0];
+  let partner = namedLeft.find((i) => i !== melodyTrack);
+  if (partner === undefined) {
+    const scored = tracks
+      .filter((t) => t.index !== melodyTrack && t.noteCount >= 8 && t.coverage >= 0.2)
+      .map((t) => ({
+        t,
+        score: 0.35 * t.polyphony + 0.3 * t.coverage + (t.meanPitch < mel.meanPitch ? 0.25 : 0)
+          + (/piano|keys|keyboard|accomp|chord|harmony|organ|e\.?piano|rhodes/i.test(t.name) ? 0.3 : 0)
+          + (/string|pad|guitar|brass|sax|flute|vocal|voice|choir|synth lead/i.test(t.name) ? -0.3 : 0)
+          + (/\bbass\b/i.test(t.name) ? -0.1 : 0),
+      }))
+      .sort((a, b) => b.score - a.score);
+    partner = scored[0]?.t.index;
+  }
+  return { rh: byTrack([melodyTrack]), lh: partner === undefined ? [] : byTrack([partner]), partnerTrack: partner };
+}
+
+/** @deprecated use pianoParts */
 export function assignHandsOriginal(song: Song, melodyTrack: number): { rh: RawNote[]; lh: RawNote[] } {
-  const named = song.tracks.filter((t) => /left|lh|bass/i.test(t.name)).map((t) => t.index);
-  const namedRight = song.tracks.filter((t) => /right|rh|melod|lead/i.test(t.name)).map((t) => t.index);
-  if (named.length && song.tracks.length >= 2) {
-    return {
-      lh: song.notes.filter((n) => named.includes(n.track)),
-      rh: song.notes.filter((n) => !named.includes(n.track)),
-    };
-  }
-  if (namedRight.length && song.tracks.length >= 2) {
-    return {
-      rh: song.notes.filter((n) => namedRight.includes(n.track)),
-      lh: song.notes.filter((n) => !namedRight.includes(n.track)),
-    };
-  }
-  if (song.tracks.length === 2) {
-    const [a, b] = song.tracks;
-    const lower = a.meanPitch < b.meanPitch ? a.index : b.index;
-    return { lh: song.notes.filter((n) => n.track === lower), rh: song.notes.filter((n) => n.track !== lower) };
-  }
-  void melodyTrack;
-  return { rh: song.notes.filter((n) => n.midi >= 60), lh: song.notes.filter((n) => n.midi < 60) };
+  return pianoParts(song, melodyTrack);
 }
 
 export interface SectionPattern { start: number; end: number; pattern: LhPattern }
@@ -131,7 +149,7 @@ export function buildLevels(
   const stage5 = opts.sectionPatterns?.length
     ? lhNotesBySection(opts.sectionPatterns, chords, bpb)
     : lhNotes(pattern, chords, bpb);
-  const orig = assignHandsOriginal(song, melodyTrack);
+  const orig = pianoParts(song, melodyTrack);
   return {
     1: early(1, []),
     2: early(2, bassLine(eChords), 'bass'),

@@ -5,6 +5,8 @@ import { buildLevels } from './levels';
 import { extractMelody, pickMelodyTrack } from './melody';
 import { detectSections } from './sections';
 import { detectKey } from './theory';
+import { suggestStartLevel } from './suggest';
+import { pianoParts } from './levels';
 
 export interface ArrangeOptions {
   melodyTrack?: number;      // override the automatic choice
@@ -20,9 +22,11 @@ export function buildArrangement(song: Song, opts: ArrangeOptions = {}): Arrange
   for (const id of [1, 2, 3, 4, 5] as const) suggestFingers(levels[id].notes);
   const totalBars = Math.max(1, Math.ceil(song.totalBeats / song.beatsPerBar));
   const sections = detectSections(levels[1].notes, totalBars, song.beatsPerBar);
+  const suggestedLevel = suggestStartLevel(levels, song.bpm);
   return {
     title: song.title, key, bpm: song.bpm, timeSig: song.timeSig, beatsPerBar: song.beatsPerBar,
-    totalBars, chords, levels, sections, melodyTrack, tracks: song.tracks,
+    totalBars, chords, levels, sections, melodyTrack, partnerTrack: pianoParts(song, melodyTrack).partnerTrack,
+    tracks: song.tracks, suggestedLevel,
   };
 }
 
@@ -34,4 +38,5 @@ export * from './sections';
 export * from './fingers';
 export * from './patterns';
 export * from './transpose';
+export * from './suggest';
 export * from './difficulty';
