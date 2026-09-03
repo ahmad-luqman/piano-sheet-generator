@@ -461,7 +461,7 @@ export class App {
   private setMode(m: PlayMode): void {
     this.player.setMode(m);
     document.querySelectorAll<HTMLButtonElement>('#mode-seg .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
-    if (m === 'listen') { this.piano.setHints(null); this.beginner.setRequired(null); }
+    if (m === 'listen' || m === 'perform') { this.piano.setHints(null); this.beginner.setRequired(null); $('#status').textContent = ''; }
   }
 
   private setHands(h: Hands): void {

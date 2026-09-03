@@ -1,10 +1,23 @@
 import type { Level, Note } from '../types';
 import type { AudioEngine } from '../audio/engine';
 import type { InputBus } from '../input/bus';
-import { isCorrectKey, isStepSatisfied } from './match';
+import { isCorrectKey, isStepSatisfied, matchPress, TIMING, type OpenStep } from './match';
 
-export type PlayMode = 'listen' | 'practice';
+/**
+ * listen: everything auto-plays. learn: pauses at each learner onset until it is played.
+ * rhythm: keeps time, scores each press against the beat, shows what is coming.
+ * perform: keeps time with no hints; the attempt is what counts toward promotion.
+ */
+export type PlayMode = 'listen' | 'learn' | 'rhythm' | 'perform';
 export type Hands = 'both' | 'rh' | 'lh';
+
+/** What happened at one learner onset, reported as soon as the step is settled. */
+export interface StepResult {
+  beat: number;
+  notes: { note: Note; hit: boolean; offsetSec?: number }[];
+  wrong: number;        // presses that matched nothing while this step was open
+  waitSec?: number;     // learn mode: how long the app waited for the step
+}
 
 export interface PlayerCallbacks {
   onPosition?(beat: number): void;
@@ -12,14 +25,18 @@ export interface PlayerCallbacks {
   onFeedback?(midi: number, correct: boolean): void;
   onStateChange?(playing: boolean): void;
   onEnd?(): void;
+  onStepResult?(result: StepResult): void;
+  /** The loop wrapped around: one repetition finished, the next begins. */
+  onLoopRestart?(): void;
 }
 
 interface Step { beat: number; notes: Note[] }
 
 /**
  * Drives playback. Position is in beats; a fixed-rate tick advances it, schedules
- * audio slightly ahead of time, and in practice mode pauses at each onset the
- * learner is responsible for until they play it.
+ * audio slightly ahead of time, and in learn mode pauses at each onset the
+ * learner is responsible for until they play it. In rhythm and perform modes it
+ * keeps going and matches presses to onsets within a time window.
  */
 export class Player {
   mode: PlayMode = 'listen';
@@ -42,6 +59,11 @@ export class Player {
   private stepIdx = 0;
   private waiting: Step | null = null;
   private pressedSinceWait = new Set<number>();
+  private waitStarted = 0;           // performance.now ms
+  private wrongDuringWait = 0;
+  private open: OpenStep[] = [];     // rhythm/perform: onsets currently listening
+  private strayWrong = 0;            // wrong presses with no open step, charged to the next one
+  private hinted: OpenStep | null = null;
   private activeVisual = new Map<number, { midi: number; end: number }>(); // scheduled note-off in beats for playback highlights
   private nextClickBeat = 0;
   private lookaheadSec = 0.12;
@@ -64,10 +86,12 @@ export class Player {
   get isWaiting(): boolean { return this.waiting !== null; }
   get duration(): number { return this.totalBeats; }
 
-  setHands(h: Hands): void { this.hands = h; this.rebuildSteps(); }
-  setMode(m: PlayMode): void { this.mode = m; this.clearWait(); this.rebuildSteps(); }
+  setHands(h: Hands): void { this.hands = h; this.closeOpen(true); this.rebuildSteps(); }
+  setMode(m: PlayMode): void { this.mode = m; this.clearWait(); this.closeOpen(true); this.rebuildSteps(); }
 
   private userHand(n: Note): boolean { return this.hands === 'both' || n.hand === this.hands; }
+  private get timed(): boolean { return this.mode === 'rhythm' || this.mode === 'perform'; }
+  private get learner(): boolean { return this.mode !== 'listen'; }
 
   private rebuildSteps(): void {
     this.steps = [];
@@ -103,6 +127,7 @@ export class Player {
     if (this.timer !== null) { clearInterval(this.timer); this.timer = null; }
     this.releaseVisuals();
     this.clearWait();
+    this.closeOpen(true);
     this.cb.onStateChange?.(false);
   }
 
@@ -116,6 +141,7 @@ export class Player {
     this.scheduledUpTo = this.position;
     this.releaseVisuals();
     this.clearWait();
+    this.closeOpen(true);
     this.stepIdx = this.steps.findIndex((s) => s.beat >= this.position - 1e-6);
     if (this.stepIdx < 0) this.stepIdx = this.steps.length;
     this.nextClickBeat = Math.ceil(this.position - 1e-6);
@@ -143,8 +169,8 @@ export class Player {
     const prev = this.position;
     this.position += dt / this.secPerBeat();
 
-    // In practice mode, never run past the next learner step.
-    const nextStep = this.mode === 'practice' ? this.steps[this.stepIdx] : undefined;
+    // In learn mode, never run past the next learner step.
+    const nextStep = this.mode === 'learn' ? this.steps[this.stepIdx] : undefined;
     if (nextStep && this.position >= nextStep.beat) {
       this.position = nextStep.beat;
       this.scheduleRange(prev, this.position + 1e-6, true); // auto-hand notes exactly up to the step
@@ -163,13 +189,56 @@ export class Player {
       this.scheduledUpTo = target;
     }
     this.expireVisuals();
+    if (this.timed) this.updateOpen();
 
     const end = this.loop ? this.loop.end : this.totalBeats;
     if (this.position >= end) {
-      if (this.loop) { this.seek(this.loop.start); this.scheduledUpTo = this.position; }
-      else { this.pause(); this.seek(0); this.cb.onEnd?.(); return; }
+      if (this.loop) { this.closeOpen(true); this.cb.onLoopRestart?.(); this.seek(this.loop.start); this.scheduledUpTo = this.position; }
+      else { this.closeOpen(true); this.pause(); this.seek(0); this.cb.onEnd?.(); return; }
     }
     this.cb.onPosition?.(this.position);
+  }
+
+  // ───────────────────────── rhythm / perform ─────────────────────────
+
+  private windowBeats(): number { return TIMING.windowSec / this.secPerBeat(); }
+
+  /** Open every step within the window ahead; settle every step that fell out of the window behind. */
+  private updateOpen(): void {
+    const w = this.windowBeats();
+    while (this.stepIdx < this.steps.length && this.steps[this.stepIdx].beat <= this.position + w) {
+      const s = this.steps[this.stepIdx++];
+      this.open.push({ beat: s.beat, notes: s.notes, matched: new Map(), wrong: this.strayWrong });
+      this.strayWrong = 0;
+    }
+    while (this.open.length && this.open[0].beat + w < this.position) this.settle(this.open.shift()!);
+    this.refreshHint();
+  }
+
+  /** Report a step and drop it. `all` settles everything still open (a boundary was reached). */
+  private closeOpen(all: boolean): void {
+    if (!all) return;
+    for (const s of this.open) this.settle(s);
+    this.open = [];
+    this.strayWrong = 0;
+    this.refreshHint();
+  }
+
+  private settle(s: OpenStep): void {
+    const spb = this.secPerBeat();
+    this.cb.onStepResult?.({
+      beat: s.beat,
+      notes: s.notes.map((note) => { const off = s.matched.get(note); return off === undefined ? { note, hit: false } : { note, hit: true, offsetSec: off * spb }; }),
+      wrong: s.wrong,
+    });
+  }
+
+  /** Rhythm mode shows the earliest onset still expecting a key; perform mode shows nothing. */
+  private refreshHint(): void {
+    const next = this.mode === 'rhythm' ? this.open.find((s) => s.notes.some((n) => !s.matched.has(n))) ?? null : null;
+    if (next === this.hinted) return;
+    this.hinted = next;
+    this.cb.onWaiting?.(next ? next.notes : null);
   }
 
   /** Schedule every non-learner note whose onset is in [from, to). */
@@ -179,7 +248,7 @@ export class Player {
     const audioNow = this.audio.now();
     for (const n of this.level.notes) {
       if (n.startBeat < from || n.startBeat >= to) continue;
-      if (this.mode === 'practice' && this.userHand(n)) continue;
+      if (this.learner && this.userHand(n)) continue;
       const delay = immediate ? 0 : Math.max(0, (n.startBeat - this.position) * spb);
       const when = audioNow + delay;
       const durSec = Math.max(0.08, n.durationBeats * spb * 0.95);
@@ -221,6 +290,8 @@ export class Player {
 
   private beginWait(step: Step): void {
     this.waiting = step;
+    this.waitStarted = performance.now();
+    this.wrongDuringWait = 0;
     this.pressedSinceWait.clear();
     // Keys already held when the step arrives count (the learner is early).
     for (const m of this.bus.held) if (isCorrectKey(step.notes, m)) this.pressedSinceWait.add(m);
@@ -233,10 +304,21 @@ export class Player {
   }
 
   private userNoteOn(midi: number): void {
+    if (this.playing && this.timed) {
+      // Position as of this press, not of the last 20 ms tick.
+      const live = this.position + (performance.now() - this.lastTickTime) / 1000 / this.secPerBeat();
+      const out = matchPress(this.open, midi, live, this.windowBeats());
+      if (out.kind === 'hit') out.step.matched.set(out.note, out.offsetBeats);
+      else if (out.step) out.step.wrong++;
+      else this.strayWrong++;
+      this.cb.onFeedback?.(midi, out.kind === 'hit');
+      this.refreshHint();
+      return;
+    }
     if (!this.waiting) return;
     const correct = isCorrectKey(this.waiting.notes, midi);
     this.cb.onFeedback?.(midi, correct);
-    if (correct) this.pressedSinceWait.add(midi);
+    if (correct) this.pressedSinceWait.add(midi); else this.wrongDuringWait++;
     this.checkSatisfied();
   }
 
@@ -246,6 +328,7 @@ export class Player {
     const step = this.waiting;
     this.waiting = null;
     this.cb.onWaiting?.(null);
+    this.cb.onStepResult?.({ beat: step.beat, notes: step.notes.map((note) => ({ note, hit: true })), wrong: this.wrongDuringWait, waitSec: (performance.now() - this.waitStarted) / 1000 });
     this.stepIdx++;
     // Resume just after the step so it is not re-triggered.
     this.position = step.beat + 1e-4;

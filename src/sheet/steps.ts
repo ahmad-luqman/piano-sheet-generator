@@ -1,5 +1,6 @@
 import type { Arrangement, Hand, Level, LevelId, Note, Section } from '../types';
 import { midiToName } from '../arrange/theory';
+import type { PlayMode } from '../practice/player';
 
 export interface StepAction {
   startBar: number;      // 0-based inclusive
@@ -7,7 +8,7 @@ export interface StepAction {
   hands: 'both' | 'rh' | 'lh';
   tempoScale: number;    // 0.5 = half speed
   level: LevelId;
-  mode: 'listen' | 'practice';
+  mode: PlayMode;
 }
 
 export interface Step {
@@ -83,13 +84,13 @@ export function generateSteps(arr: Arrangement, levelId: LevelId): Step[] {
     if (s.repeatOf !== undefined) {
       const orig = sections[s.repeatOf];
       steps.push({ title: `Right hand, ${barRange(s)}`, body: `Good news: these bars are the same as ${barRange(orig)}. Play them again from memory.`,
-        action: { startBar: s.startBar, endBar: s.endBar, hands: 'rh', tempoScale: 0.6, level: levelId, mode: 'practice' } });
+        action: { startBar: s.startBar, endBar: s.endBar, hands: 'rh', tempoScale: 0.6, level: levelId, mode: 'learn' } });
       continue;
     }
     steps.push({
       title: `Right hand, ${barRange(s)} (section ${s.label})`,
       body: `Notes in order: ${letterSequence(sn)}. Play slowly at half speed. The app waits for each correct key before moving on.`,
-      action: { startBar: s.startBar, endBar: s.endBar, hands: 'rh', tempoScale: 0.5, level: levelId, mode: 'practice' },
+      action: { startBar: s.startBar, endBar: s.endBar, hands: 'rh', tempoScale: 0.5, level: levelId, mode: 'learn' },
     });
   }
 
@@ -108,7 +109,7 @@ export function generateSteps(arr: Arrangement, levelId: LevelId): Step[] {
       steps.push({
         title: `Left hand, ${barRange(s)} (section ${s.label})`,
         body: `Left-hand notes: ${letterSequence(sn, 16)}.`,
-        action: { startBar: s.startBar, endBar: s.endBar, hands: 'lh', tempoScale: 0.5, level: levelId, mode: 'practice' },
+        action: { startBar: s.startBar, endBar: s.endBar, hands: 'lh', tempoScale: 0.5, level: levelId, mode: 'learn' },
       });
     }
   }
@@ -120,7 +121,7 @@ export function generateSteps(arr: Arrangement, levelId: LevelId): Step[] {
       steps.push({
         title: `Hands together, ${barRange(s)}`,
         body: 'Start very slowly. Left hand lands on the beat, right hand fits on top.',
-        action: { startBar: s.startBar, endBar: s.endBar, hands: 'both', tempoScale: 0.5, level: levelId, mode: 'practice' },
+        action: { startBar: s.startBar, endBar: s.endBar, hands: 'both', tempoScale: 0.5, level: levelId, mode: 'learn' },
       });
     }
   }
@@ -128,7 +129,7 @@ export function generateSteps(arr: Arrangement, levelId: LevelId): Step[] {
     steps.push({
       title: `Whole piece at ${Math.round(t * 100)}% speed`,
       body: t >= 1 ? 'Full speed. Once this is comfortable, try the next stage.' : 'Play it through. Mistakes are fine; keep going and loop tricky bars.',
-      action: { startBar: 0, endBar: arr.totalBars - 1, hands: lh.length ? 'both' : 'rh', tempoScale: t, level: levelId, mode: 'practice' },
+      action: { startBar: 0, endBar: arr.totalBars - 1, hands: lh.length ? 'both' : 'rh', tempoScale: t, level: levelId, mode: 'learn' },
     });
   }
   return steps;

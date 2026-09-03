@@ -10,7 +10,7 @@ page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
 await page.goto('http://localhost:5179/', { waitUntil: 'networkidle0' });
 await page.click('#btn-enable-audio');
 await page.click('#level-picker [data-level="3"]');
-await page.click('#mode-seg [data-mode="practice"]');
+await page.click('#mode-seg [data-mode="learn"]');
 await page.click('#btn-play');
 await new Promise((r) => setTimeout(r, 1500));
 const status = await page.$eval('#status', (e) => e.textContent);

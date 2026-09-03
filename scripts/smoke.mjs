@@ -21,7 +21,7 @@ await new Promise((r) => setTimeout(r, 800));
 await page.screenshot({ path: `${SP}/s3-advanced.png` });
 // practice mode
 await page.click('.tab[data-sheet="beginner"]');
-await page.click('#mode-seg [data-mode="practice"]');
+await page.click('#mode-seg [data-mode="learn"]');
 await page.click('#btn-stop');
 await page.click('#btn-play');
 await new Promise((r) => setTimeout(r, 800));
