@@ -59,7 +59,7 @@ making yourself:
 
 ## Known limits
 
-- Melody and chord detection are heuristics; dense band arrangements will be rough. Level 4 is
-  always the file as written.
+- Melody and chord detection are heuristics; dense band arrangements will be rough. Stage 6 is
+  the melody track plus one partner track as written, not every track in the file.
 - Tempo changes inside a file are flattened to the first tempo.
 - bitmidi hosts user uploads of varying quality and copyright status.
