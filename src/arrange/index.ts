@@ -31,3 +31,4 @@ export * from './melody';
 export * from './levels';
 export * from './sections';
 export * from './fingers';
+export * from './difficulty';
