@@ -71,9 +71,16 @@ export function analyzeMidi(buf: ArrayBuffer, id: string, name: string): Version
     melodyConfidence: melodyConfidence(song),
     fingerprint: fingerprint(original, song.bpm),
     suggestedLevel: arr.suggestedLevel,
-    preview: arr.levels[1].notes.filter((n) => n.startBeat < PREVIEW_BARS * song.beatsPerBar),
+    preview: previewNotes(arr.levels[1].notes, song.beatsPerBar),
     bpm: song.bpm, beatsPerBar: song.beatsPerBar,
   };
+}
+
+/** Eight bars of melody starting at the bar of the first note, so an intro does not eat the preview. */
+function previewNotes(notes: Note[], beatsPerBar: number): Note[] {
+  if (notes.length === 0) return [];
+  const first = Math.floor(Math.min(...notes.map((n) => n.startBeat)) / beatsPerBar) * beatsPerBar;
+  return notes.filter((n) => n.startBeat >= first && n.startBeat < first + PREVIEW_BARS * beatsPerBar);
 }
 
 // ───────────────────────── the three judgement calls ─────────────────────────

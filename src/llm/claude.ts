@@ -3,6 +3,7 @@ import type { Arrangement, Chord, Level, LevelId, LhPattern } from '../types';
 import type { Step } from '../sheet/steps';
 import type { SectionPattern } from '../arrange/levels';
 import { explainChordRuleBased } from '../arrange/theory';
+import { describeVersion, recommendScore, type VersionAnalysis } from '../search/analyze';
 
 /**
  * Every call here follows the same rules: the user's own key, opt-in; a rule-based
@@ -232,4 +233,34 @@ export async function explainChord(arr: Arrangement, level: Level, chord: Chord,
   const text = textOf(res).trim() || facts;
   explanations.set(cacheKey, text);
   return text;
+}
+
+// ───────────────────────── version explanation (search results) ─────────────────────────
+
+const VERSIONS_SCHEMA = obj({ versions: { type: 'array', items: obj({ id: { type: 'string' }, sentence: { type: 'string' } }) } });
+
+/**
+ * One sentence per analysed upload of a song, written from the badges alone: what kind of
+ * file it is and who it suits. Input is the badge data code already computed; the model
+ * adds no facts about the file. Returns a map from version id to sentence.
+ */
+export async function explainVersions(title: string, artist: string | undefined, analyses: VersionAnalysis[]): Promise<Map<string, string>> {
+  const c = client();
+  const ranked = [...analyses].sort((a, b) => recommendScore(b) - recommendScore(a));
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 1500,
+    output_config: { format: { type: 'json_schema', schema: VERSIONS_SCHEMA }, effort: 'low' },
+    system: 'A beginner searched a MIDI site for a song and the app downloaded and analysed several uploads of it. ' +
+      'For each version write one plain sentence of at most twenty words saying what kind of file it is and whether a beginner should pick it, ' +
+      'using only the badges given. The first version listed is the app\'s recommendation. Do not invent anything about the files.',
+    messages: [{ role: 'user', content: JSON.stringify({
+      song: artist ? `${title} (${artist})` : title,
+      versions: ranked.map((a, i) => ({ id: a.id, fileName: a.name, recommended: i === 0, badges: describeVersion(a).map((b) => b.text) })),
+    }) }],
+  });
+  checkRefusal(res);
+  const parsed = JSON.parse(textOf(res)) as { versions: { id: string; sentence: string }[] };
+  const ids = new Set(analyses.map((a) => a.id));
+  return new Map(parsed.versions.filter((v) => ids.has(v.id) && typeof v.sentence === 'string').map((v) => [v.id, v.sentence.trim()]));
 }

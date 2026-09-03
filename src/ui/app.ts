@@ -4,7 +4,10 @@ import { buildArrangement, defaultPattern, describeChanges, explainChordRuleBase
 import { parseMidi } from '../midi/parse';
 import { CATALOG, findCatalog, loadCatalogSong } from '../catalog/songs';
 import { downloadMidi, searchBitmidiAll, type SearchResult } from '../search/bitmidi';
-import { searchGroups, titleCase, type SongGroup } from '../search/rank';
+import { searchGroups, type RankedResult, type SongGroup } from '../search/rank';
+import { analyzeVersions, cachedAnalysis, type VersionAnalysis, type VersionSort } from '../search/analyze';
+import { GroupCard } from './versions';
+import { esc } from './dom';
 import { BeginnerSheet } from '../sheet/beginner';
 import { AdvancedSheet } from '../sheet/advanced';
 import { generateSteps, type Step } from '../sheet/steps';
@@ -14,7 +17,8 @@ import { InputBus } from '../input/bus';
 import { ComputerKeyboard } from '../input/keyboard';
 import { WebMidiInput } from '../input/webmidi';
 import { Player, type Hands, type PlayMode } from '../practice/player';
-import { chooseAccompaniment, enrichSteps, explainChord, getApiKey, setApiKey, suggestSearchTerms } from '../llm/claude';
+import { Preview } from '../practice/preview';
+import { chooseAccompaniment, enrichSteps, explainChord, explainVersions, getApiKey, setApiKey, suggestSearchTerms } from '../llm/claude';
 
 const $ = <T extends HTMLElement>(sel: string): T => {
   const el = document.querySelector<T>(sel);
@@ -43,6 +47,10 @@ export class App {
   private keyboard: ComputerKeyboard;
   private midi: WebMidiInput;
   private searchAbort: AbortController | null = null;
+  private preview: Preview;
+  private previewButton: HTMLButtonElement | null = null;
+  private versionSort: VersionSort = 'best';
+  private cards: GroupCard[] = [];
   private lastFeedbackTimers = new Map<number, number>();
 
   constructor(_root: HTMLElement) {
@@ -59,6 +67,8 @@ export class App {
     });
     this.keyboard = new ComputerKeyboard(this.bus, (t) => t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement);
     this.midi = new WebMidiInput(this.bus);
+    this.preview = new Preview(this.audio);
+    this.preview.onStop = () => { if (this.previewButton) this.previewButton.textContent = '▶ Preview'; this.previewButton = null; };
 
     this.wireBus();
     this.wireUi();
@@ -109,7 +119,7 @@ export class App {
       const url = $<HTMLInputElement>('#url-input').value.trim();
       if (url) void this.loadFromUrl(url, url.split('/').pop() ?? 'MIDI');
     });
-    document.addEventListener('click', (e) => { if (!(e.target as HTMLElement).closest('#results, #search-form')) $('#results').hidden = true; });
+    document.addEventListener('click', (e) => { if (!(e.target as HTMLElement).closest('#results, #search-form')) this.hideResults(); });
 
     const picker = $('#level-picker');
     for (const id of [1, 2, 3, 4, 5, 6] as LevelId[]) {
@@ -201,35 +211,41 @@ export class App {
     head.querySelector('button')!.addEventListener('click', () => { box.hidden = true; });
     box.appendChild(head);
     if (groups.length === 0 && done) { const e = document.createElement('div'); e.className = 'res-empty'; e.textContent = 'Nothing found. Try the original title, the composer, or fewer words.'; box.appendChild(e); }
-    for (const g of groups) box.appendChild(this.renderGroup(g));
+    this.cards = groups.map((g) => new GroupCard(g, this.groupHandlers));
+    for (const c of this.cards) box.appendChild(c.el);
     box.hidden = false;
   }
 
-  private renderGroup(g: SongGroup): HTMLElement {
-    const box = $('#results');
-    const wrap = document.createElement('div'); wrap.className = 'res-group';
-    const best = g.best;
-    const isCatalog = best.source === 'catalog';
-    const label = isCatalog ? best.name : g.displayTitle + (g.artist ? ` <span class="muted">· ${esc(titleCase(g.artist))}</span>` : '');
-    const el = document.createElement('div'); el.className = 'res-item';
-    el.innerHTML = `<span class="tag ${best.source}">${isCatalog ? 'built-in' : 'bitmidi'}</span><span class="name">${isCatalog ? esc(label) : label}</span>` +
-      (best.views ? `<span class="muted small">${best.views.toLocaleString()} views</span>` : '') +
-      (g.versions.length > 1 ? `<button class="btn small res-more" type="button">${g.versions.length} versions</button>` : '');
-    el.addEventListener('click', () => { box.hidden = true; void this.pick(best); });
-    wrap.appendChild(el);
-    const more = el.querySelector<HTMLButtonElement>('.res-more');
-    if (more) {
-      const list = document.createElement('div'); list.className = 'res-versions'; list.hidden = true;
-      for (const v of g.versions) {
-        const row = document.createElement('div'); row.className = 'res-ver';
-        row.innerHTML = `<span class="name">${esc(v.name)}</span>${v.views ? `<span class="muted small">${v.views.toLocaleString()} views</span>` : ''}`;
-        row.addEventListener('click', () => { box.hidden = true; void this.pick(v); });
-        list.appendChild(row);
-      }
-      wrap.appendChild(list);
-      more.addEventListener('click', (e) => { e.stopPropagation(); list.hidden = !list.hidden; more.textContent = list.hidden ? `${g.versions.length} versions` : 'Hide versions'; });
-    }
-    return wrap;
+  private hideResults(): void {
+    $('#results').hidden = true;
+    this.preview.stop();
+  }
+
+  private readonly groupHandlers = {
+    pick: (r: RankedResult) => { this.hideResults(); void this.pick(r); },
+    analyze: (versions: RankedResult[], card: GroupCard) => {
+      const signal = this.searchAbort?.signal;
+      void analyzeVersions(versions, { limit: versions.length, concurrency: 3, signal, onEach: () => card.refresh() }).then(() => card.refresh());
+    },
+    preview: (a: VersionAnalysis, button: HTMLButtonElement) => void this.previewVersion(a, button),
+    explain: (g: SongGroup, analyses: VersionAnalysis[]) => this.explainVersions(g, analyses),
+    sort: { get: () => this.versionSort, set: (s: VersionSort) => { this.versionSort = s; for (const c of this.cards) c.refresh(); } },
+  };
+
+  /** Eight bars of the stage 1 melody through the sampler; a second click on the same button stops it. */
+  private async previewVersion(a: VersionAnalysis, button: HTMLButtonElement): Promise<void> {
+    if (this.previewButton === button) { this.preview.stop(); return; }
+    this.player.pause();
+    await this.ensureAudio();
+    this.preview.stop();
+    this.previewButton = button; button.textContent = '■ Stop';
+    this.preview.play(a.preview, a.bpm);
+  }
+
+  private async explainVersions(g: SongGroup, analyses: VersionAnalysis[]): Promise<Map<string, string>> {
+    if (!getApiKey()) { this.toast('Add your Anthropic API key in Settings (⚙) to let Claude explain the picks.', true); $<HTMLDialogElement>('#dlg-settings').showModal(); return new Map(); }
+    try { return await explainVersions(g.displayTitle, g.artist, analyses); }
+    catch (err) { this.toast(`Could not ask Claude: ${msg(err)}`, true); return new Map(); }
   }
 
   private showSuggestions(terms: string[]): void {
@@ -242,6 +258,9 @@ export class App {
 
   private async pick(r: SearchResult): Promise<void> {
     if (r.source === 'catalog') { const entry = CATALOG.find((c) => c.id === r.id)!; this.loadSong(loadCatalogSong(entry)); return; }
+    const analysed = cachedAnalysis(r);
+    if (analysed?.song) { this.loadSong(analysed.song); return; }
+    if (analysed && !analysed.valid) { this.toast(`Could not load: ${analysed.error}`, true); return; }
     await this.loadFromUrl(r.downloadUrl, r.name);
   }
 
@@ -525,5 +544,4 @@ export class App {
 function catalogResult(c: { id: string; title: string; composer: string }): SearchResult {
   return { id: c.id, name: `${c.title} — ${c.composer}`, downloadUrl: '', source: 'catalog' };
 }
-function esc(s: string): string { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!)); }
 function msg(e: unknown): string { return e instanceof Error ? e.message : String(e); }

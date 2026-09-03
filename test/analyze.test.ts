@@ -54,6 +54,7 @@ describe('analyzeMidi', () => {
     expect(a.suggestedLevel).toBeDefined();
     expect(a.preview.length).toBeGreaterThan(0);
     expect(a.preview.every((n) => n.startBeat < PREVIEW_BARS * a.beatsPerBar)).toBe(true);
+    expect(new Set(a.preview.map((n) => n.hand))).toEqual(new Set(['rh']));
     expect(a.song).toBeDefined();
   });
   it('recognises a band arrangement', () => {
@@ -70,6 +71,15 @@ describe('analyzeMidi', () => {
     expect(a.handSplit).toBeLessThan(0.7);
     expect(describeVersion(a).map((b) => b.text)).toContain('single track');
     expect(describeVersion(a).map((b) => b.text)).toContain('no left hand');
+  });
+  it('previews eight bars from the first melody note, not from bar 1', () => {
+    const shifted = midiFrom('twinkle', [{ track: 0, name: 'Right hand' }, { track: 1, name: 'Left hand' }], (m) => {
+      for (const t of m.tracks) for (const n of t.notes) n.ticks += 10 * 4 * PPQ;
+    });
+    const a = analyzeMidi(shifted, 's', 'late start');
+    expect(a.preview.length).toBeGreaterThan(0);
+    expect(Math.min(...a.preview.map((n) => n.startBeat))).toBeGreaterThanOrEqual(40);
+    expect(a.preview.every((n) => n.startBeat < 40 + PREVIEW_BARS * a.beatsPerBar)).toBe(true);
   });
   it('returns an invalid analysis instead of throwing on garbage', () => {
     const a = analyzeMidi(new TextEncoder().encode('hello').buffer as ArrayBuffer, 'x', 'junk');
