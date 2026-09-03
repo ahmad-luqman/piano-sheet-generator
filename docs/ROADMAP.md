@@ -35,6 +35,12 @@ a pick from a list that code then generates and verifies. See "LLM features" bel
 
 ## Phase A — Search relevance (no new services)
 
+**Status: shipped 2026-09-03.** Items 1–7 landed in `src/search/normalize.ts`, `src/search/rank.ts`,
+`src/search/bitmidi.ts` (`searchBitmidiAll`), `src/catalog/songs.ts` (aliases, fuzzy lookup) and
+`src/arrange/difficulty.ts`. Ranking weights and difficulty thresholds are marked as decision
+points in the code. "Let It Be" now returns the Beatles upload first with seven versions grouped.
+The fingerprint is not shown in the UI yet; Phase B puts it on version cards.
+
 Problem: one bitmidi query, page 0 only, provider order, filenames as titles. "Let It Be"
 ranks six "Let It Snow" files first (reproduced 2026-09-03). Catalog match is substring only.
 

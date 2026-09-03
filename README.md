@@ -8,7 +8,7 @@ is one click away for those who can.
 
 ## Features
 
-- **Song search** on bitmidi.com (no backend needed), plus `.mid` upload, MIDI URL, and 8 bundled
+- **Song search** on bitmidi.com (no backend needed), re-ranked locally and grouped one card per song, plus `.mid` upload, MIDI URL, and 8 bundled
   public-domain pieces (Twinkle Twinkle, Ode to Joy, Für Elise, Canon in D, …).
 - **Four levels** generated from any MIDI: 1 Melody · 2 Melody + Bass · 3 Melody + Chords · 4 Original.
 - **Letter sheet**: colour-coded note pills with letter names, finger numbers and chord symbols.
