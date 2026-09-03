@@ -121,9 +121,9 @@ export function scoreAttempt(meta: AttemptMeta, results: StepResult[], level: Le
   };
 }
 
-/** Does this attempt count toward earning the stage? */
+/** Does this attempt count toward earning the stage? "Both" always covers what the stage needs. */
 export function qualifiesForPromotion(s: AttemptScore, handsNeeded: Hands): boolean {
-  return s.wholePiece && s.mode !== 'learn' && s.hands === handsNeeded && s.tempoScale >= PROMOTION.tempo - 1e-6;
+  return s.wholePiece && s.mode !== 'learn' && (s.hands === handsNeeded || s.hands === 'both') && s.tempoScale >= PROMOTION.tempo - 1e-6;
 }
 
 /** "The G4→D5 jump caused 4 of your 6 errors." Empty when no single cause dominates. */

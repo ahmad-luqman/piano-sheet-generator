@@ -19,6 +19,7 @@ import { WebMidiInput } from '../input/webmidi';
 import { Player, type Hands, type PlayMode, type StepResult } from '../practice/player';
 import { Preview } from '../practice/preview';
 import { scoreAttempt, type AttemptMeta, type AttemptScore } from '../practice/score';
+import { TIMING } from '../practice/match';
 import { barQuality } from '../practice/score';
 import { dailySet, ProgressStore, recordAttempt, scaffoldLevel, songKey, type SongProgress, type StageProgress } from '../practice/progress';
 import { handsNeeded, nextAction, type NextAction } from '../practice/next';
@@ -64,6 +65,7 @@ export class App {
   private next: NextAction | null = null;
   private diagnosis: string | undefined;
   private panelBusy: 'diagnose' | 'journal' | undefined;
+  private aidsAppliedFor = '';
 
   constructor(_root: HTMLElement) {
     if (import.meta.env.DEV) (window as any).__app = this;
@@ -345,7 +347,9 @@ export class App {
     $('#lh-pattern-wrap').hidden = id !== 5;
     $<HTMLOptionElement>('#lh-pattern option[value="auto"]').textContent = `Auto (${PATTERN_META[defaultPattern(this.arr.timeSig, this.arr.bpm)].name.toLowerCase()})`;
     this.beginner.render(this.arr, level);
-    this.applyAids(scaffoldLevel(this.stage()));
+    // The scaffold applies when the song or stage changes, not on same-stage re-renders, so manual aid choices survive toggles.
+    const aidsTag = `${this.songProgressKey()}|${id}`;
+    if (aidsTag !== this.aidsAppliedFor) { this.applyAids(scaffoldLevel(this.stage())); this.aidsAppliedFor = aidsTag; }
     this.beginner.onSeek = (b) => this.seek(b);
     this.beginner.onChordClick = (c, bar, x, y) => this.showChordPop(c, bar, x, y);
     this.advanced.onSeek = (b) => this.seek(b);
@@ -387,7 +391,7 @@ export class App {
     if (a.meta.mode !== 'rhythm') return;
     const notes = a.results.reduce((n, x) => n + x.notes.length, 0);
     const hits = a.results.reduce((n, x) => n + x.notes.filter((y) => y.hit).length, 0);
-    const onTime = a.results.reduce((n, x) => n + x.notes.filter((y) => y.hit && Math.abs(y.offsetSec ?? 1) <= 0.15).length, 0);
+    const onTime = a.results.reduce((n, x) => n + x.notes.filter((y) => y.hit && Math.abs(y.offsetSec ?? 1) <= TIMING.goodSec).length, 0);
     $('#status').textContent = `${hits}/${notes} notes · ${onTime} on time`;
   }
 
@@ -425,7 +429,8 @@ export class App {
   private renderProgress(): void {
     if (!this.arr) return;
     const stage = this.stage();
-    this.next = nextAction(this.arr, this.levelId, stage);
+    // Keep Claude's pick while its diagnosis is showing; attempts and stage changes clear both.
+    if (!this.diagnosis || !this.next) this.next = nextAction(this.arr, this.levelId, stage);
     this.progressPanel.render({
       arr: this.arr, levelId: this.levelId, stage, song: this.songProgress(), last: this.lastScore ?? undefined, next: this.next,
       today: dailySet(stage, this.arr.sections), scaffold: scaffoldLevel(stage), diagnosis: this.diagnosis, busy: this.panelBusy,
@@ -482,6 +487,7 @@ export class App {
       const today = new Date().toDateString();
       const attempts = stage.attempts.filter((a) => new Date(a.at).toDateString() === today);
       const text = await writeJournal(this.arr, this.levelId, attempts.length ? attempts : stage.attempts.slice(-5), this.next);
+      if (!text) { this.toast('Claude returned nothing to note.', true); return; }
       song.journal.push({ at: new Date().toISOString(), text });
       if (song.journal.length > 10) song.journal.splice(0, song.journal.length - 10);
       this.store.touch(song);
@@ -604,19 +610,28 @@ export class App {
     this.player.seek(beat);
   }
 
+  /** Changing mode or hands mid-run ends the attempt being scored and starts a fresh one under the new settings. */
+  private restartAttemptIfLive(change: () => void): void {
+    const live = this.attempt !== null && this.player.isPlaying;
+    change();
+    if (live) { this.finishAttempt(); this.beginAttempt(); }
+  }
+
   private setMode(m: PlayMode): void {
-    this.player.setMode(m);
+    this.restartAttemptIfLive(() => this.player.setMode(m));
     document.querySelectorAll<HTMLButtonElement>('#mode-seg .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
     if (m === 'listen' || m === 'perform') { this.piano.setHints(null); this.beginner.setRequired(null); $('#status').textContent = ''; }
   }
 
   private setHands(h: Hands): void {
-    this.player.setHands(h);
+    this.restartAttemptIfLive(() => this.player.setHands(h));
     document.querySelectorAll<HTMLButtonElement>('#hands-seg .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.hands === h));
   }
 
   private setTempo(scale: number): void {
     this.player.tempoScale = scale;
+    // A run is scored at the slowest tempo it was played at, so slowing down mid-run cannot earn a fast clean run.
+    if (this.attempt) this.attempt.meta.tempoScale = Math.min(this.attempt.meta.tempoScale, scale);
     $<HTMLInputElement>('#tempo').value = String(Math.round(scale * 100));
     $('#tempo-label').textContent = `${Math.round(scale * 100)}%`;
   }

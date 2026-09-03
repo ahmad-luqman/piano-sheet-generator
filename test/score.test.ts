@@ -65,6 +65,8 @@ describe('scoreAttempt', () => {
     const s = scoreAttempt(meta(), play(), level, arr.beatsPerBar, arr.totalBars);
     expect(qualifiesForPromotion(s, 'rh')).toBe(true);
     expect(qualifiesForPromotion(s, 'both')).toBe(false);
+    expect(qualifiesForPromotion({ ...s, hands: 'both' }, 'rh')).toBe(true); // the default hands setting covers a melody-only stage
+    expect(qualifiesForPromotion({ ...s, hands: 'lh' }, 'both')).toBe(false);
     expect(qualifiesForPromotion({ ...s, mode: 'learn' }, 'rh')).toBe(false);
     expect(qualifiesForPromotion({ ...s, tempoScale: 0.6 }, 'rh')).toBe(false);
     expect(qualifiesForPromotion({ ...s, endBar: 3, wholePiece: false }, 'rh')).toBe(false);
