@@ -50,7 +50,10 @@ function letterSequence(notes: Note[], max = 24): string {
   return seq.length > max ? seq.slice(0, max).join(' ') + ' …' : seq.join(' ');
 }
 
-export function generateSteps(arr: Arrangement, levelId: LevelId): Step[] {
+/** The adaptive drill that replaces the tempo ramp once a stage has been attempted. */
+export interface NextStep { title: string; reason: string; action: StepAction }
+
+export function generateSteps(arr: Arrangement, levelId: LevelId, next?: NextStep): Step[] {
   const level = arr.levels[levelId];
   const notes = level.notes;
   const rh = notes.filter((n) => n.hand === 'rh');
@@ -125,6 +128,10 @@ export function generateSteps(arr: Arrangement, levelId: LevelId): Step[] {
       });
     }
   }
+  if (next) {
+    steps.push({ title: `Next: ${next.title.replace(/, stage \d$/, '')}`, body: `${cap(next.reason)}. The app picks this from your last attempts; play it and the suggestion updates.`, action: next.action });
+    return steps;
+  }
   for (const t of tempoRamp()) {
     steps.push({
       title: `Whole piece at ${Math.round(t * 100)}% speed`,
@@ -148,3 +155,5 @@ function uniqueChords(level: Level, lh: Note[]): { name: string; keys: string }[
   }
   return [...seen].map(([name, keys]) => ({ name, keys }));
 }
+
+function cap(s: string): string { return s ? s[0].toUpperCase() + s.slice(1) : s; }
