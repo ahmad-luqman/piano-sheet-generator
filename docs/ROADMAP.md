@@ -62,6 +62,16 @@ Files: `src/search/normalize.ts` (new), `src/search/rank.ts` (new), `src/search/
 
 ## Phase B — "See alternatives" as arrangement comparison
 
+**Status: shipped 2026-09-04.** Items 1–5 landed in `src/search/analyze.ts` (analysis, recommendation
+score, sorts, badges, URL-keyed cache), `src/ui/versions.ts` (the card), `src/practice/preview.ts`
+(eight-bar sampler preview) and `explainVersions` in `src/llm/claude.ts`. The parser now keeps each
+track's General MIDI family and whether the file had drums; instrumentation is judged from those.
+Opening a song's versions analyses the top six uploads, three at a time; "Check 6 more" continues.
+The recommendation weights and the definition of "closest to original" (the most complete piano
+transcription in the group) are marked as a decision point in the code. Verified in a headless
+browser against live bitmidi: "Let It Be" shows seven versions, all band files, with the cleanest
+hand split and the most confident melody pick starred. The Claude call was checked for shape, not run live.
+
 Problem: users cannot tell which of twelve uploads is the clean piano one without loading it.
 
 1. **Prefetch and analyze** the top N candidates of the selected song group (download,
@@ -212,7 +222,7 @@ that for the short ones. A full practice session with everything on is a few cen
 
 ## Suggested order
 
-A → D → B → E → C → F.
+A → D → B → E → C → F. A, D and B are shipped; E is next.
 
 Reasoning: A and D each change what a beginner experiences on day one and need no new
 services. The fingerprint lands at the end of A so both B and D can use it. E is the largest and

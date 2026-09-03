@@ -10,6 +10,9 @@ is one click away for those who can.
 
 - **Song search** on bitmidi.com (no backend needed), re-ranked locally and grouped one card per song, plus `.mid` upload, MIDI URL, and 8 bundled
   public-domain pieces (Twinkle Twinkle, Ode to Joy, Für Elise, Canon in D, …).
+- **Version comparison**: open a song's versions and the app downloads and analyses the top uploads, badges each one
+  (piano only or band, length, hand split, melody confidence, difficulty, suggested stage), stars the best file for a
+  beginner, sorts by easiest, most complete, most popular or piano-only, and previews eight bars of the melody before you commit.
 - **Six stages** generated from any MIDI: 1 Melody · 2 + Bass · 3 + Fifths · 4 + Chords · 5 + Pattern (waltz, Alberti or broken chord by meter) · 6 Original piano parts. Stages 1–3 move to the key with the fewest black keys (toggle), new notes glow at each stage, much harder sections are shown one stage easier, and the difficulty fingerprint picks where to start.
 - **Letter sheet**: colour-coded note pills with letter names, finger numbers and chord symbols.
 - **Standard notation**: grand staff rendered by abcjs.
@@ -46,7 +49,7 @@ Deploys anywhere static files are served. A GitHub Pages workflow is included in
 
 If the automatic melody pick is wrong, choose another track under **Melody track** in the side panel.
 
-## Three decisions left for you
+## Four decisions left for you
 
 The app ships with working defaults, but these small functions encode teaching choices worth
 making yourself:
@@ -56,10 +59,13 @@ making yourself:
 | `src/arrange/levels.ts` → `simplifyMelodyForBeginner()` | What gets dropped or folded to make Level 1 easy? |
 | `src/practice/match.ts` → `isStepSatisfied()` | When has the learner "played" a step: exact chord, melody note only, majority? |
 | `src/sheet/steps.ts` → `tempoRamp()` | How fast should the hands-together tempo ramp go? |
+| `src/search/analyze.ts` → `RECOMMEND` | Which upload of a song should a beginner get by default: how much do piano-only, a clean hand split and a confident melody each count? |
 
 ## Known limits
 
 - Melody and chord detection are heuristics; dense band arrangements will be rough. Stage 6 is
   the melody track plus one partner track as written, not every track in the file.
 - Tempo changes inside a file are flattened to the first tempo.
-- bitmidi hosts user uploads of varying quality and copyright status.
+- bitmidi hosts user uploads of varying quality and copyright status. The version badges judge
+  instrumentation from General MIDI program numbers, so a band file that never sets programs reads as
+  "piano + others" rather than "band".
