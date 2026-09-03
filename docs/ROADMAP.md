@@ -95,6 +95,13 @@ Files: `src/search/analyze.ts` (new), `src/ui/app.ts`.
 
 ## Phase D — Arrangement ladder
 
+**Status: shipped 2026-09-03.** Decisions taken: six stages (melody, +bass, +fifths, +block chords,
++moving pattern, original piano parts); transposition on by default for stages 1–3 with a toggle;
+stages as buttons, slider deferred. Items 1–10 landed in `src/arrange/patterns.ts`, `transpose.ts`,
+`ladder.ts`, `suggest.ts`, `levels.ts` (`pianoParts`), `theory.ts` (rule-based chord explanation) and
+`src/llm/claude.ts`. Each level now carries its own key and chords. Easing never crosses the
+stage 3 → 4 key change. The LLM calls were verified for shape against the SDK types, not run live.
+
 Problem: Level 3 (block chords) to Level 4 (original) is a cliff. The left hand has only
 two patterns.
 
@@ -215,8 +222,8 @@ D, then add one call per phase where that phase's data makes it useful.
 
 ## Decisions needed before building
 
-1. Left-hand ladder patterns and order (Phase D.1).
-2. Transposition default: on for Levels 1–3, or opt-in (Phase D.2).
-3. Stages first with a slider later, or slider only (Phase D.3).
+1. ~~Left-hand ladder patterns and order (Phase D.1).~~ Six stages, decided 2026-09-03.
+2. ~~Transposition default (Phase D.2).~~ On for stages 1–3, toggle in the song bar.
+3. ~~Stages first with a slider later, or slider only (Phase D.3).~~ Stages now.
 4. Promotion rule thresholds (Phase E.4). Can wait until E starts.
 5. Confirm the phase order, or pick the first two phases to take.

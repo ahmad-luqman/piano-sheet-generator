@@ -1,6 +1,6 @@
 # Piano Sheet Generator
 
-Type a song name, get a beginner-friendly piano arrangement at four difficulty levels, and learn it
+Type a song name, get a beginner-friendly piano arrangement in six stages, and learn it
 on a 3D piano in the browser. Built for self-learners who cannot read sheet music; standard notation
 is one click away for those who can.
 
@@ -10,7 +10,7 @@ is one click away for those who can.
 
 - **Song search** on bitmidi.com (no backend needed), re-ranked locally and grouped one card per song, plus `.mid` upload, MIDI URL, and 8 bundled
   public-domain pieces (Twinkle Twinkle, Ode to Joy, Für Elise, Canon in D, …).
-- **Four levels** generated from any MIDI: 1 Melody · 2 Melody + Bass · 3 Melody + Chords · 4 Original.
+- **Six stages** generated from any MIDI: 1 Melody · 2 + Bass · 3 + Fifths · 4 + Chords · 5 + Pattern (waltz, Alberti or broken chord by meter) · 6 Original piano parts. Stages 1–3 move to the key with the fewest black keys (toggle), new notes glow at each stage, much harder sections are shown one stage easier, and the difficulty fingerprint picks where to start.
 - **Letter sheet**: colour-coded note pills with letter names, finger numbers and chord symbols.
 - **Standard notation**: grand staff rendered by abcjs.
 - **3D piano** (Three.js) with Synthesia-style falling notes, key animation, and a 2D fallback.
@@ -41,7 +41,7 @@ Deploys anywhere static files are served. A GitHub Pages workflow is included in
 2. Detect the key with Krumhansl–Schmuckler profiles.
 3. Pick the melody track (pitch, monophony, density, track name) and reduce it to a top voice.
 4. Detect one chord per bar (or half bar) by matching a pitch-class histogram to triad/7th templates.
-5. Build the levels: simplified melody, root bass, block chords, original with hand split.
+5. Build the ladder: simplified melody, root bass, root and fifth, block chords, moving pattern, melody track plus its piano partner.
 6. Suggest five-finger fingering and detect repeated 4-bar sections.
 
 If the automatic melody pick is wrong, choose another track under **Melody track** in the side panel.
