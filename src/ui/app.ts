@@ -26,6 +26,7 @@ export class App {
   private song: Song | null = null;
   private arr: Arrangement | null = null;
   private levelId: LevelId = 1;
+  private transposeEarly = true;
   private sheetTab: 'beginner' | 'advanced' = 'beginner';
   private steps: Step[] = [];
   private currentStep = -1;
@@ -91,6 +92,7 @@ export class App {
     $('#overlay-audio').addEventListener('click', (e) => { if (e.target === e.currentTarget) { $('#overlay-audio').hidden = true; void this.ensureAudio(); } });
 
     $<HTMLFormElement>('#search-form').addEventListener('submit', (e) => { e.preventDefault(); void this.search($<HTMLInputElement>('#search-input').value); });
+    $<HTMLInputElement>('#opt-easykey').addEventListener('change', (e) => { this.transposeEarly = (e.target as HTMLInputElement).checked; this.arrange(this.arr?.melodyTrack); });
     $('#btn-catalog').addEventListener('click', () => this.showResults(searchGroups(CATALOG.map(catalogResult), ''), '', true));
     $<HTMLInputElement>('#file-input').addEventListener('change', async (e) => {
       const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return;
@@ -258,7 +260,7 @@ export class App {
   private arrange(melodyTrack?: number): void {
     if (!this.song) return;
     try {
-      this.arr = buildArrangement(this.song, { melodyTrack });
+      this.arr = buildArrangement(this.song, { melodyTrack, transposeEarly: this.transposeEarly });
     } catch (err) { this.toast(`Could not arrange: ${msg(err)}`, true); return; }
     $<HTMLSelectElement>('#melody-track').value = String(this.arr.melodyTrack);
     $('#song-title').textContent = this.arr.title;
@@ -279,6 +281,7 @@ export class App {
     this.levelId = id;
     document.querySelectorAll<HTMLButtonElement>('#level-picker button').forEach((b) => b.classList.toggle('active', b.dataset.level === String(id)));
     const level = this.level!;
+    $('#easy-key-info').textContent = level.transpose ? `${level.key.name}, from ${this.arr.key.name}` : '';
     this.beginner.render(this.arr, level);
     this.beginner.onSeek = (b) => this.seek(b);
     this.advanced.onSeek = (b) => this.seek(b);

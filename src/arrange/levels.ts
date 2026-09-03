@@ -3,6 +3,7 @@ import { LEVEL_META } from '../types';
 import { chordAt } from './chords';
 import { bassLine, blockChords, defaultPattern, fifths, lhNotes, lhNotesBySection } from './patterns';
 import { quantize, round3, spell } from './theory';
+import { easyTransposition, transposeChords, transposeNotes } from './transpose';
 
 function toNote(n: RawNote, hand: Note['hand'], key: KeyInfo): Note {
   const { letter, octave } = spell(n.midi, key);
@@ -99,6 +100,8 @@ export interface SectionPattern { start: number; end: number; pattern: LhPattern
 export interface LevelOptions {
   /** Stage 5 left-hand texture per section; defaults to `defaultPattern` for the whole piece. */
   sectionPatterns?: SectionPattern[];
+  /** Move stages 1–3 to the key with the fewest black keys. Default true. */
+  transposeEarly?: boolean;
 }
 
 /**
@@ -111,20 +114,28 @@ export function buildLevels(
   const easyMelody = simplifyMelodyForBeginner(melody, 0.5);
   const fullMelody = simplifyMelodyForBeginner(melody, 0.25);
   const bpb = song.beatsPerBar;
-  const mk = (id: LevelId, rh: RawNote[], lh: RawNote[], lhPattern?: LhPattern): Level => ({
-    id, ...LEVEL_META[id], key, chords, transpose: 0, lhPattern,
-    notes: [...rh.map((n) => toNote(n, 'rh', key)), ...lh.map((n) => toNote(n, 'lh', key))]
+  const mk = (id: LevelId, rh: RawNote[], lh: RawNote[], lhPattern?: LhPattern, k = key, ch = chords, transpose = 0): Level => ({
+    id, ...LEVEL_META[id], key: k, chords: ch, transpose, lhPattern,
+    notes: [...rh.map((n) => toNote(n, 'rh', k)), ...lh.map((n) => toNote(n, 'lh', k))]
       .sort((a, b) => a.startBeat - b.startBeat || a.midi - b.midi),
   });
+  // Early stages in an easy key: judged on the notes the learner will actually play at stage 2.
+  const easy = opts.transposeEarly === false
+    ? { semitones: 0, key }
+    : easyTransposition([...easyMelody, ...bassLine(chords)], key);
+  const eKey = easy.key;
+  const eChords = transposeChords(chords, easy.semitones, eKey);
+  const eMelody = transposeNotes(easyMelody, easy.semitones);
+  const early = (id: LevelId, lh: RawNote[], p?: LhPattern) => mk(id, eMelody, lh, p, eKey, eChords, easy.semitones);
   const pattern = defaultPattern(song.timeSig, song.bpm);
   const stage5 = opts.sectionPatterns?.length
     ? lhNotesBySection(opts.sectionPatterns, chords, bpb)
     : lhNotes(pattern, chords, bpb);
   const orig = assignHandsOriginal(song, melodyTrack);
   return {
-    1: mk(1, easyMelody, []),
-    2: mk(2, easyMelody, bassLine(chords), 'bass'),
-    3: mk(3, easyMelody, fifths(chords, bpb), 'fifths'),
+    1: early(1, []),
+    2: early(2, bassLine(eChords), 'bass'),
+    3: early(3, fifths(eChords, bpb), 'fifths'),
     4: mk(4, fullMelody, blockChords(chords, bpb), 'block'),
     5: mk(5, fullMelody, stage5, opts.sectionPatterns?.length ? undefined : pattern),
     6: mk(6, orig.rh, orig.lh),

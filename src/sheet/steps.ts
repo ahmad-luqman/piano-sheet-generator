@@ -1,4 +1,4 @@
-import type { Arrangement, Hand, LevelId, Note, Section } from '../types';
+import type { Arrangement, Hand, Level, LevelId, Note, Section } from '../types';
 import { midiToName } from '../arrange/theory';
 
 export interface StepAction {
@@ -62,9 +62,9 @@ export function generateSteps(arr: Arrangement, levelId: LevelId): Step[] {
   const rhHigh = rh.length ? Math.max(...rh.map((n) => n.midi)) : 72;
   steps.push({
     title: 'Find your starting position',
-    body: `This piece is in ${arr.key.name} at about ${arr.bpm} beats per minute, ${arr.timeSig.num}/${arr.timeSig.den} time (count ${arr.timeSig.num} per bar). ` +
+    body: `This piece is in ${level.key.name}${level.transpose ? ` (moved from ${arr.key.name} to stay on white keys)` : ''} at about ${arr.bpm} beats per minute, ${arr.timeSig.num}/${arr.timeSig.den} time (count ${arr.timeSig.num} per bar). ` +
       `Middle C is the C nearest the centre of the keyboard, lit on the 3D piano. ` +
-      `Your right hand will use the keys from ${midiToName(rhLow, arr.key.useFlats)} up to ${midiToName(rhHigh, arr.key.useFlats)}.` +
+      `Your right hand will use the keys from ${midiToName(rhLow, level.key.useFlats)} up to ${midiToName(rhHigh, level.key.useFlats)}.` +
       (rh[0] ? ` The first right-hand note is ${rh[0].letter}${rh[0].octave}${rh[0].finger ? `, played with finger ${rh[0].finger} (1 = thumb, 5 = little finger)` : ''}.` : ''),
   });
 
@@ -94,7 +94,7 @@ export function generateSteps(arr: Arrangement, levelId: LevelId): Step[] {
 
   // 4. Left hand chords
   if (lh.length) {
-    const chordList = uniqueChords(arr, lh);
+    const chordList = uniqueChords(level, lh);
     steps.push({
       title: 'Learn the left-hand chords',
       body: `This piece uses ${chordList.length} chord${chordList.length === 1 ? '' : 's'}: ` +
@@ -133,12 +133,13 @@ export function generateSteps(arr: Arrangement, levelId: LevelId): Step[] {
   return steps;
 }
 
-function uniqueChords(arr: Arrangement, lh: Note[]): { name: string; keys: string }[] {
+function uniqueChords(level: Level, lh: Note[]): { name: string; keys: string }[] {
   const seen = new Map<string, string>();
-  for (const c of arr.chords) {
+  for (const c of level.chords) {
     if (seen.has(c.name)) continue;
     const pitches = lh.filter((n) => Math.abs(n.startBeat - c.startBeat) < 0.01).map((n) => n.midi);
-    const keys = (pitches.length ? pitches : c.pitches).sort((a, b) => a - b).map((m) => midiToName(m, arr.key.useFlats)).join(' ');
+    // Moving patterns put one note on the chord's first beat; show the whole voicing instead.
+    const keys = (pitches.length >= 2 ? pitches : c.pitches).sort((a, b) => a - b).map((m) => midiToName(m, level.key.useFlats)).join(' ');
     seen.set(c.name, keys);
   }
   return [...seen].map(([name, keys]) => ({ name, keys }));

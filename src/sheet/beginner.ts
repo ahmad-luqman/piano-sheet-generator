@@ -55,7 +55,7 @@ export class BeginnerSheet {
         });
         const num = document.createElement('div'); num.className = 'bs-num'; num.textContent = String(b + 1); bar.appendChild(num);
         const chordsRow = document.createElement('div'); chordsRow.className = 'bs-chords';
-        for (const c of arr.chords) {
+        for (const c of level.chords) {
           const cs = c.startBeat;
           const inBar = cs >= barStart && cs < barStart + bpb;
           const continues = b === 0 ? false : cs < barStart && cs + c.durationBeats > barStart && Math.abs(cs % bpb) > 1e-6 && false;
@@ -63,7 +63,7 @@ export class BeginnerSheet {
           const el = document.createElement('span'); el.className = 'bs-chord';
           el.style.left = `${((cs - barStart) / bpb) * 100}%`;
           el.textContent = c.name;
-          el.title = `${c.name}: ${c.pitches.map((p) => noteName(p, arr)).join(' ')}`;
+          el.title = `${c.name}: ${c.pitches.map((p) => noteName(p, level.key.useFlats)).join(' ')}`;
           chordsRow.appendChild(el);
         }
         bar.appendChild(chordsRow);
@@ -143,7 +143,7 @@ export class BeginnerSheet {
   }
 }
 
-function noteName(midi: number, arr: Arrangement): string {
-  const names = arr.key.useFlats ? ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'] : ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+function noteName(midi: number, useFlats: boolean): string {
+  const names = useFlats ? ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'] : ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   return `${names[midi % 12]}${Math.floor(midi / 12) - 1}`;
 }

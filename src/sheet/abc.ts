@@ -3,7 +3,7 @@ import type { Arrangement, Chord, Hand, Level, Note } from '../types';
 /** Generate ABC notation (grand staff, two voices) for a level. Rhythm is quantized to 16ths. */
 export function toAbc(arr: Arrangement, level: Level): string {
   const bpb16 = Math.round(arr.beatsPerBar * 4);
-  const keyName = keyToAbc(arr);
+  const keyName = keyToAbc(level);
   const header = [
     'X:1',
     `T:${escapeAbc(arr.title)}`,
@@ -16,8 +16,8 @@ export function toAbc(arr: Arrangement, level: Level): string {
     'V:LH clef=bass name="L.H."',
     `K:${keyName}`,
   ];
-  const keySig = keySignatureMap(arr.key.sharps);
-  const rhBars = voiceBars(level.notes.filter((n) => n.hand === 'rh'), arr, bpb16, keySig, arr.chords);
+  const keySig = keySignatureMap(level.key.sharps);
+  const rhBars = voiceBars(level.notes.filter((n) => n.hand === 'rh'), arr, bpb16, keySig, level.chords);
   const lhBars = voiceBars(level.notes.filter((n) => n.hand === 'lh'), arr, bpb16, keySig, null);
   const lines: string[] = [];
   for (let b = 0; b < arr.totalBars; b += 4) {
@@ -32,9 +32,9 @@ function escapeAbc(s: string): string {
   return s.replace(/[\r\n]/g, ' ');
 }
 
-function keyToAbc(arr: Arrangement): string {
-  const tonic = arr.key.name.split(' ')[0].replace('#', '#').replace('b', 'b');
-  return arr.key.mode === 'minor' ? `${tonic}m` : tonic;
+function keyToAbc(level: Level): string {
+  const tonic = level.key.name.split(' ')[0];
+  return level.key.mode === 'minor' ? `${tonic}m` : tonic;
 }
 
 /** letter -> accidental (-1 flat, 0, +1 sharp) implied by the key signature. */

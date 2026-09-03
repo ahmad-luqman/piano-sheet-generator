@@ -33,10 +33,11 @@ function extractJson<T>(text: string): T {
 /** Rewrite the rule-based steps with friendlier coaching, keeping the actions intact. */
 export async function enrichSteps(arr: Arrangement, levelId: LevelId, steps: Step[]): Promise<Step[]> {
   const c = client();
+  const level = arr.levels[levelId];
   const summary = {
-    title: arr.title, key: arr.key.name, bpm: arr.bpm, timeSignature: `${arr.timeSig.num}/${arr.timeSig.den}`,
-    level: `${levelId} - ${arr.levels[levelId].name}`, bars: arr.totalBars,
-    chords: [...new Set(arr.chords.map((ch) => ch.name))],
+    title: arr.title, key: level.key.name, bpm: arr.bpm, timeSignature: `${arr.timeSig.num}/${arr.timeSig.den}`,
+    level: `${levelId} - ${level.name}`, bars: arr.totalBars,
+    chords: [...new Set(level.chords.map((ch) => ch.name))],
     sections: arr.sections.map((s) => ({ label: s.label, bars: `${s.startBar + 1}-${s.endBar + 1}`, repeatOf: s.repeatOf })),
     steps: steps.map((s, i) => ({ index: i, title: s.title, body: s.body })),
   };

@@ -25,7 +25,7 @@ describe('ABC generation', () => {
     }
   });
   it('spells sharps once per bar in a sharp key', () => {
-    const canon = buildArrangement(loadCatalogSong(CATALOG.find((c) => c.id === 'canon-in-d')!));
+    const canon = buildArrangement(loadCatalogSong(CATALOG.find((c) => c.id === 'canon-in-d')!), { transposeEarly: false });
     const abc = toAbc(canon, canon.levels[1]);
     expect(abc).toContain('K:D');
     expect(abc).not.toContain('^f');   // F# is in the key signature, so no explicit accidental

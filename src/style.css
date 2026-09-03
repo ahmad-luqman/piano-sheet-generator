@@ -62,6 +62,8 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 .level-picker button.active { background: var(--accent); color: white; }
 .level-picker button b { display: block; font-size: 12px; color: inherit; }
 .level-picker button span { font-size: 10px; }
+.song-bar .toggle { display: flex; align-items: center; gap: 5px; white-space: nowrap; color: var(--muted); cursor: pointer; }
+.song-bar .toggle input { margin: 0; }
 .sheet-tabs { display: flex; gap: 4px; }
 .tab { border: 1px solid var(--line); background: transparent; padding: 6px 10px; border-radius: 9px; cursor: pointer; color: var(--muted); }
 .tab.active { color: var(--text); border-color: var(--accent); }

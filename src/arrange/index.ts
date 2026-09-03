@@ -8,6 +8,7 @@ import { detectKey } from './theory';
 
 export interface ArrangeOptions {
   melodyTrack?: number;      // override the automatic choice
+  transposeEarly?: boolean;  // stages 1–3 in the key with the fewest black keys (default true)
 }
 
 export function buildArrangement(song: Song, opts: ArrangeOptions = {}): Arrangement {
@@ -15,7 +16,7 @@ export function buildArrangement(song: Song, opts: ArrangeOptions = {}): Arrange
   const melodyTrack = opts.melodyTrack ?? pickMelodyTrack(song);
   const melody = extractMelody(song, melodyTrack);
   const chords = detectChords(song.notes, song.beatsPerBar, song.totalBeats, key);
-  const levels = buildLevels(song, melody, chords, key, melodyTrack);
+  const levels = buildLevels(song, melody, chords, key, melodyTrack, { transposeEarly: opts.transposeEarly });
   for (const id of [1, 2, 3, 4, 5] as const) suggestFingers(levels[id].notes);
   const totalBars = Math.max(1, Math.ceil(song.totalBeats / song.beatsPerBar));
   const sections = detectSections(levels[1].notes, totalBars, song.beatsPerBar);
@@ -32,4 +33,5 @@ export * from './levels';
 export * from './sections';
 export * from './fingers';
 export * from './patterns';
+export * from './transpose';
 export * from './difficulty';
