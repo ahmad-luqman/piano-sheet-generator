@@ -14,6 +14,8 @@ export interface SearchResult {
   detail?: string;
   /** A score the source's own matcher already computed; the re-ranker uses it instead of the name. */
   relevance?: number;
+  /** "Playable for you" badge for catalog entries: label, tone and a tooltip naming the skills. */
+  fit?: { label: string; tone: 'good' | 'warn' | 'bad' | 'neutral'; title: string };
 }
 
 const BASE = 'https://bitmidi.com';

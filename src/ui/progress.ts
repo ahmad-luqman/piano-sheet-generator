@@ -4,6 +4,7 @@ import type { AttemptScore } from '../practice/score';
 import { PROMOTION } from '../practice/score';
 import { SCAFFOLD_NAMES, type DailyItem, type SongProgress, type StageProgress } from '../practice/progress';
 import type { NextAction } from '../practice/next';
+import type { Bridge, Readiness } from '../practice/skills';
 import { el, esc } from './dom';
 
 export interface ProgressHandlers {
@@ -13,6 +14,8 @@ export interface ProgressHandlers {
   diagnose?(): Promise<void>;
   /** Claude's two-sentence journal entry; absent without an API key. */
   journal?(): Promise<void>;
+  /** Open a catalog entry by id (the bridge song). */
+  openCatalog?(id: string): void;
 }
 
 export interface ProgressState {
@@ -26,6 +29,10 @@ export interface ProgressState {
   scaffold: number;
   diagnosis?: string;     // Claude's cause, once asked
   busy?: 'diagnose' | 'journal';
+  /** How this stage compares with what the learner has played clean, and a shorter piece that bridges the gap. */
+  fit?: Readiness;
+  bridge?: Bridge;
+  credited?: number;      // stages that built the profile
 }
 
 /** "Your progress" card in the side panel: last attempt, the streak, the next drill, today's set, aids, journal. */
@@ -56,6 +63,18 @@ export class ProgressPanel {
       const text = stage.earned ? `Stage ${s.levelId} earned. Stage ${nextLevel} is open.`
         : `<span class="pg-streak" title="Consecutive clean whole-piece runs in Rhythm or Perform mode at ${Math.round(PROMOTION.tempo * 100)}% tempo or faster">${dots}</span> ${stage.cleanRuns} of ${PROMOTION.runs} clean runs toward stage ${nextLevel}`;
       root.appendChild(el('div', 'pg-row', text));
+    }
+
+    if (s.fit) {
+      const tone = s.fit.kind === 'ready' ? 'good' : s.fit.kind === 'stretch' ? 'warn' : s.fit.kind === 'needs' ? 'bad' : '';
+      const fitRow = el('div', 'pg-row pg-fit', `<span>For you:</span><span class="badge ${tone}" title="${esc(s.fit.detail)}">${esc(s.fit.label)}</span><span class="muted small">${esc(s.fit.kind === 'unknown' ? s.fit.detail : s.fit.detail)}</span>`);
+      root.appendChild(fitRow);
+      if (s.bridge && this.h.openCatalog) {
+        const b = s.bridge;
+        const row = el('div', 'pg-row pg-bridge', `<span>Bridge:</span><span class="muted small">“${esc(b.title)}”, ${esc(b.reason)}.</span>`);
+        const open = el('button', 'btn small', 'Open'); open.addEventListener('click', () => this.h.openCatalog!(b.id)); row.appendChild(open);
+        root.appendChild(row);
+      }
     }
 
     const card = el('div', 'pg-next');

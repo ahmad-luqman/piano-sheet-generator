@@ -5,6 +5,9 @@ import { parseMidi } from '../midi/parse';
 import { fingerprint, fingerprintValues } from '../arrange/difficulty';
 import { allCatalog, CATALOG, catalogById, isMidiEntry, loadCatalogEntry, loadCatalogSong, registerCatalog, searchCatalog, type CatalogEntry } from '../catalog/songs';
 import { describeLength, loadMutopiaIndex } from '../catalog/mutopia';
+import { bridgeCandidates, catalogFit, fitTone, sortForLearner } from '../catalog/readiness';
+import { bridgeSong, readiness, skillProfile, type Bridge, type Readiness, type SkillProfile } from '../practice/skills';
+import type { CatalogFit } from '../catalog/readiness';
 import { downloadMidi, searchBitmidiAll, type SearchResult } from '../search/bitmidi';
 import { searchGroups, type RankedResult, type SongGroup } from '../search/rank';
 import { analyzeVersions, cachedAnalysis, type VersionAnalysis, type VersionSort } from '../search/analyze';
@@ -88,6 +91,7 @@ export class App {
     this.progressPanel = new ProgressPanel($('#progress'), {
       run: (a) => this.runAction(a),
       showAllAids: () => { this.applyAids(0); this.renderProgress(); },
+      openCatalog: (id: string) => this.openCatalog(id),
       diagnose: () => this.diagnose(),
       journal: () => this.journal(),
     });
@@ -134,7 +138,7 @@ export class App {
 
     $<HTMLFormElement>('#search-form').addEventListener('submit', (e) => { e.preventDefault(); void this.search($<HTMLInputElement>('#search-input').value); });
     $<HTMLInputElement>('#opt-easykey').addEventListener('change', (e) => { this.transposeEarly = (e.target as HTMLInputElement).checked; this.arrange(this.arr?.melodyTrack); });
-    $('#btn-catalog').addEventListener('click', () => this.showResults(searchGroups(allCatalog().map((e) => catalogResult(e)), ''), '', true));
+    $('#btn-catalog').addEventListener('click', () => this.showLibrary());
     $<HTMLInputElement>('#file-input').addEventListener('change', async (e) => {
       const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return;
       try { this.loadSong(parseMidi(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, ''), 'upload')); } catch (err) { this.toast(`Could not read that file: ${msg(err)}`, true); }
@@ -438,6 +442,41 @@ export class App {
   private stage(): StageProgress | undefined { const k = this.songProgressKey(); return k ? this.store.peek(k, this.levelId) : undefined; }
   private songProgress(): SongProgress | undefined { const k = this.songProgressKey(); return k ? this.store.load()[k] : undefined; }
 
+  /** Fingerprint values of one stage of the current song at its tempo; stored with attempts and compared with the profile. */
+  stageFingerprint(level: LevelId): number[] | undefined {
+    return this.arr ? fingerprintValues(fingerprint(this.arr.levels[level].notes, this.arr.bpm)) : undefined;
+  }
+
+  /** The skill profile over everything saved in this browser. Cheap: a few dozen stage records at most. */
+  private profile(): SkillProfile { return skillProfile(Object.values(this.store.load())); }
+
+  /** The library, ordered for this learner: ready pieces first, then small stretches, then the rest, easiest first. */
+  private showLibrary(): void {
+    const profile = this.profile();
+    const fits = sortForLearner(allCatalog(), profile);
+    const results = fits.map((f) => catalogResult(f.entry, undefined, f));
+    const ready = fits.filter((f) => f.fit.kind === 'ready').length;
+    const note = profile.values ? `sorted for you: ${ready} ready now, then small stretches` : 'sorted easiest first; play something clean in Rhythm or Perform mode to sort for you';
+    this.showResults(searchGroups(results, ''), '', true, note);
+  }
+
+  /** Readiness of the current stage and a bridge song, for the progress panel. */
+  private fitState(): { fit?: Readiness; bridge?: Bridge; credited: number } {
+    if (!this.arr || !this.level) return { credited: 0 };
+    const profile = this.profile();
+    const fit = readiness(this.stageFingerprint(this.levelId)!, profile);
+    const current = this.song?.source === 'catalog' ? allCatalog().find((e) => this.arr!.title.startsWith(e.title))?.id : undefined;
+    const bridge = fit.kind === 'needs' || fit.kind === 'stretch' ? bridgeSong(fit, profile, bridgeCandidates(allCatalog()), current) : undefined;
+    return { fit, bridge, credited: profile.credited };
+  }
+
+  private openCatalog(id: string): void {
+    const entry = catalogById(id);
+    if (!entry) { this.toast('That piece is no longer in the catalog.', true); return; }
+    this.hideResults();
+    void loadCatalogEntry(entry).then((song) => this.loadSong(song)).catch((err) => this.toast(`Could not load: ${msg(err)}`, true));
+  }
+
   private beginAttempt(): void {
     if (!this.arr || this.player.mode === 'listen') return;
     const bpb = this.arr.beatsPerBar;
@@ -480,7 +519,7 @@ export class App {
     const stage = this.store.stage(song, a.meta.level);
     const before = scaffoldLevel(stage);
     // The stage's fingerprint travels with the record so the skill profile can credit a clean run.
-    const outcome = recordAttempt(stage, score, this.arr.sections, handsNeeded(this.arr, a.meta.level), new Date(), fingerprintValues(fingerprint(level.notes, this.arr.bpm)));
+    const outcome = recordAttempt(stage, score, this.arr.sections, handsNeeded(this.arr, a.meta.level), new Date(), this.stageFingerprint(a.meta.level));
     this.store.touch(song);
     this.lastScore = score; this.diagnosis = undefined;
     const bits = [`notes ${Math.round(score.noteAccuracy * 100)}%`, score.timingAccuracy !== undefined ? `timing ${Math.round(score.timingAccuracy * 100)}%` : '', score.wrong ? `${score.wrong} wrong` : ''].filter(Boolean).join(', ');
@@ -501,7 +540,7 @@ export class App {
     if (!this.diagnosis || !this.next) this.next = nextAction(this.arr, this.levelId, stage);
     this.progressPanel.render({
       arr: this.arr, levelId: this.levelId, stage, song: this.songProgress(), last: this.lastScore ?? undefined, next: this.next,
-      today: dailySet(stage, this.arr.sections), scaffold: scaffoldLevel(stage), diagnosis: this.diagnosis, busy: this.panelBusy,
+      today: dailySet(stage, this.arr.sections), scaffold: scaffoldLevel(stage), diagnosis: this.diagnosis, busy: this.panelBusy, ...this.fitState(),
     });
     const heat = new Map<number, number>();
     for (const [k, b] of Object.entries(stage?.bars ?? {})) { const bar = parseInt(k, 10); heat.set(bar, Math.min(heat.get(bar) ?? 1, barQuality(b))); }
@@ -540,7 +579,7 @@ export class App {
       this.renderProgress();
       this.next = { ...candidate, candidates: this.next.candidates };
       this.diagnosis = cause;
-      this.progressPanel.render({ arr: this.arr, levelId: this.levelId, stage, song: this.songProgress(), last: this.lastScore ?? undefined, next: this.next, today: dailySet(stage, this.arr.sections), scaffold: scaffoldLevel(stage), diagnosis: cause });
+      this.progressPanel.render({ arr: this.arr, levelId: this.levelId, stage, song: this.songProgress(), last: this.lastScore ?? undefined, next: this.next, today: dailySet(stage, this.arr.sections), scaffold: scaffoldLevel(stage), diagnosis: cause, ...this.fitState() });
       this.steps = generateSteps(this.arr, this.levelId, { title: this.next.title, reason: cause, action: this.next.action });
       this.paintSteps();
     } catch (err) { this.panelBusy = undefined; this.renderProgress(); this.toast(`Could not ask Claude: ${msg(err)}`, true); }
@@ -773,9 +812,10 @@ export class App {
 /** Catalog hits above this count are noise: "sonata" matches a hundred Mutopia pieces, the best twenty is plenty. */
 const MAX_CATALOG_HITS = 20;
 
-function catalogResult(c: CatalogEntry, relevance?: number): SearchResult {
+function catalogResult(c: CatalogEntry, relevance?: number, fit?: CatalogFit): SearchResult {
   const r: SearchResult = { id: c.id, name: `${c.title} — ${c.composer}`, downloadUrl: '', source: 'catalog', relevance };
   if (isMidiEntry(c)) { r.origin = c.origin; r.detail = describeLength(c); r.downloadUrl = c.url; }
+  if (fit) r.fit = { label: fit.fit.label, tone: fitTone(fit.fit), title: `Stage ${fit.suggested}: ${fit.fit.detail}` };
   return r;
 }
 function msg(e: unknown): string { return e instanceof Error ? e.message : String(e); }
