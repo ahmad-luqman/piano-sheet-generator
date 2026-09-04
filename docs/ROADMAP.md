@@ -14,7 +14,7 @@ small enough for a few commits. Items marked **Decision** need your call before 
 | Seven fixed stages | "Hook" is a section choice (absorbed into the steps generator as "start with the most repeated section") and "Rhythm" is a reading-assist toggle, not arrangements. Folded into the three-axis model below. |
 | Generic `SearchProvider` interface up front | Only two sources exist (catalog, bitmidi). Introduce the seam when grouping needs it, not before. |
 | Arrangement lab (merge tracks from two files) | Nothing in A–E made it cheaper; still needs a per-track editor. Dropped 2026-09-04. Personal hand constraints and ghost hand went into Phase F. |
-| Hum or upload audio (basic-pitch in the browser) | TensorFlow.js plus a model is a multi-megabyte dependency in a build that already warns at 500 kB, and it cannot be verified headless without synthesized audio. Dropped 2026-09-04. |
+| ~~Hum or upload audio (basic-pitch in the browser)~~ | Dropped 2026-09-04 for size, then revived the same day as Phase G once iTunes previews turned out to be CORS-readable: the model is 0.9 MB, TensorFlow.js 1.3 MB, both in a lazily loaded chunk, and the check runs on audio synthesized in the page. |
 
 ## Guiding idea
 
@@ -248,6 +248,37 @@ third). The three Claude calls were checked for shape, not run live. New decisio
    third run they are handed back and rescored; a ghosted run never counts toward promotion. If the
    hand-back rule does not converge in one commit it goes to the dropped table with that reason.
 
+## Phase G — Any song from its sound
+
+**Status: in progress, planned 2026-09-04.** Trigger: "it doesn't search Urdu/Pakistani songs". No
+open MIDI site has that repertoire (bitmidi has the national anthem and nothing else; archive.org,
+freemidi, midiworld and GitHub turned up nothing usable, verified 2026-09-04), so the source has to
+be sound rather than MIDI.
+
+Facts that make it possible: iTunes Search already resolves these titles, every hit carries a
+30-second preview, and previews are served with `access-control-allow-origin: *`. Spotify's
+basic-pitch runs in the browser on TensorFlow.js: a 0.9 MB model plus a 1.3 MB library, loaded on
+first use only.
+
+1. **Transcription pipeline** (`src/input/audio.ts`). Decode any audio the browser can read,
+   resample to 22.05 kHz mono, run basic-pitch, keep notes above an amplitude floor and longer
+   than 60 ms, estimate the tempo from onset autocorrelation, and hand the pipeline a one-track
+   Song in beats. Transcriptions are cached per source in localStorage. **Decision**: the tempo
+   estimator's range (70–160 bpm) and the amplitude floor.
+2. **Preview cards in search.** Whenever the title lookup runs, the iTunes candidates with a
+   preview become cards under the results: "Afreen Afreen · Atif Aslam, 30-second preview" with a
+   Transcribe button. The song loads with source `preview`, then arranges like any MIDI.
+3. **Audio file and hum.** An audio upload (the full song from the learner's computer) and a
+   ten-second microphone recording share the pipeline; the hum path is melody-only by nature.
+4. **Non-Latin queries.** A query in Urdu, Arabic, Devanagari or any script the normalizer folds to
+   nothing skips the catalog and goes straight to the lookup instead of listing every built-in song.
+5. Checks: a headless run transcribes a melody synthesized in the page (Twinkle through an
+   oscillator) and compares pitches; a second run transcribes a live iTunes preview and loads it.
+
+Known limits, by design: thirty seconds of a song, not the whole piece; a transcription of a full
+mix, so the melody pick follows the loudest line, usually the voice; no lyrics; bitmidi's user
+uploads remain the better source where they exist.
+
 ## LLM features (cross-cutting)
 
 Rules for every call: opt-in on the user's key; rule-based fallback always exists; the
@@ -275,7 +306,7 @@ that for the short ones. A full practice session with everything on is a few cen
 
 ## Suggested order
 
-A → D → B → E → C → F. All six are shipped as of 2026-09-04; what remains is tuning the decision points.
+A → D → B → E → C → F → G. A–F are shipped as of 2026-09-04; G is in progress.
 
 Reasoning: A and D each change what a beginner experiences on day one and need no new
 services. The fingerprint lands at the end of A so both B and D can use it. E is the largest and
