@@ -145,7 +145,10 @@ export function recordAttempt(stage: StageProgress, score: AttemptScore, section
   }
   for (const [k, c] of Object.entries(stage.causes)) if (c.count < 0.3) delete stage.causes[k];
 
-  if (score.clean) stage.cleanReps++;
+  // A run the ghost hand helped with proves nothing about the aids or the sections it played.
+  const ghosted = score.ghost ?? [];
+  const ghostBars = new Set(ghosted.map((c) => parseInt(c, 10)));
+  if (score.clean && ghosted.length === 0) stage.cleanReps++;
   const wasEarned = stage.earned;
   if (qualifiesForPromotion(score, handsNeeded)) {
     stage.cleanRuns = score.clean ? stage.cleanRuns + 1 : 0;
@@ -155,6 +158,7 @@ export function recordAttempt(stage: StageProgress, score: AttemptScore, section
 
   for (const sec of sections) {
     if (score.startBar > sec.startBar || score.endBar < sec.endBar) continue;
+    if ([...ghostBars].some((b) => b >= sec.startBar && b <= sec.endBar)) continue;
     const canon = sec.repeatOf ?? sec.index;
     const key = String(canon);
     const fr = stage.fragments[key] ?? { section: canon, attempts: 0, cleanCount: 0, lastClean: false, intervalDays: 1, due: now.toISOString(), lastAt: now.toISOString() };

@@ -55,6 +55,7 @@ await sleep(500);
 await page.evaluate(() => window.__app.setLevel(1));
 await sleep(200);
 const panel3 = await page.$eval('#progress', (e) => e.innerText);
+const forYou = panel3.split('\n').filter((l, i, a) => /^For you/.test(l) || (i > 0 && /^For you/.test(a[i - 1]))).join(' | ');
 console.log(JSON.stringify({ A: { offsets: A.offsets, status: A.status, toast: A.toast }, lagMs: Math.round(lagMs), B: { offsets: B.offsets.slice(0, 8), toast: B.toast, panel: B.panel }, heat, lastStep,
-  attempts: stage1.attempts.map((a) => ({ mode: a.mode, bars: `${a.startBar}-${a.endBar}`, notes: a.noteAccuracy, timing: a.timingAccuracy, wrong: a.wrong, clean: a.clean })), cleanRuns: stage1.cleanRuns, cleanReps: stage1.cleanReps, panel3: panel3.split('\n').slice(0, 5), logs }, null, 1));
+  attempts: stage1.attempts.map((a) => ({ mode: a.mode, bars: `${a.startBar}-${a.endBar}`, notes: a.noteAccuracy, timing: a.timingAccuracy, wrong: a.wrong, clean: a.clean })), cleanRuns: stage1.cleanRuns, cleanReps: stage1.cleanReps, fingerprint: stage1.fingerprint, bestCleanTempo: stage1.bestCleanTempo, forYou, panel3: panel3.split('\n').slice(0, 5), logs }, null, 1));
 await browser.close();

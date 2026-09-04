@@ -42,11 +42,12 @@ const KIND_ORDER: Record<Readiness['kind'], number> = { ready: 0, stretch: 1, ne
  * first. Without a profile every piece is "unknown" and the order is plain difficulty.
  */
 export function sortForLearner(entries: CatalogEntry[], profile: SkillProfile): CatalogFit[] {
+  // An entry without a fingerprint (an index built before the fingerprint pass) stays listed, last, as unknown.
+  const unknown: Readiness = { kind: 'unknown', gaps: [], label: 'Not rated', detail: 'run npm run fingerprint:catalog to rate this piece' };
   return entries
-    .map((e) => catalogFit(e, profile))
-    .filter((f): f is CatalogFit => !!f)
+    .map((e) => catalogFit(e, profile) ?? { entry: e, suggested: 1 as LevelId, values: [], fit: unknown })
     .sort((a, b) => KIND_ORDER[a.fit.kind] - KIND_ORDER[b.fit.kind]
-      || overall(a.values) - overall(b.values)
+      || (a.values.length ? overall(a.values) : 9) - (b.values.length ? overall(b.values) : 9)
       || bars(a.entry) - bars(b.entry));
 }
 

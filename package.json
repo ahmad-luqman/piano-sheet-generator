@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "ingest:mutopia": "node scripts/ingest-mutopia.mjs",
+    "ingest:mutopia": "node scripts/ingest-mutopia.mjs && npm run fingerprint:catalog",
     "fingerprint:catalog": "vite build --config scripts/vite.ssr.config.ts --ssr scripts/fingerprint-catalog.ts && node .cache/ssr/fingerprint-catalog.js"
   },
   "dependencies": {

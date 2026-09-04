@@ -224,7 +224,7 @@ third). The three Claude calls were checked for shape, not run live. New decisio
    has no fingerprints; the profile then says "not enough played yet" and everything below falls back
    to the plain difficulty sort. **Decision**: a clean run at 60% tempo credits density, note speed and
    tempo at 60%, the other metrics at face value.
-2. **Catalog fingerprints** (`scripts/fingerprint-catalog.mjs`). Reads the bundled MIDI files through
+2. **Catalog fingerprints** (`scripts/fingerprint-catalog.ts`). Reads the bundled MIDI files through
    the real six-stage pipeline (a Vite server build of the TypeScript sources, `scripts/vite.ssr.config.ts`)
    and writes the suggested stage plus the fingerprint values of all six stages into the index. Offline;
    no network. Values, not scores, so `THRESHOLDS` can change without a data run.

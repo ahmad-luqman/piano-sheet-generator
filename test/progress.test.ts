@@ -178,3 +178,20 @@ describe('nextAction', () => {
     expect(adaptive[adaptive.length - 1].action).toEqual(n.action);
   });
 });
+
+describe('ghosted runs', () => {
+  it('neither fade the aids nor mark a ghosted section clean', async () => {
+    const { emptyStage, recordAttempt } = await import('../src/practice/progress');
+    const stage = emptyStage();
+    const bars = [{ bar: 0, hand: 'rh' as const, notes: 4, hits: 4, wrong: 0, timed: 0, onTime: 0, pauses: 0 }, { bar: 4, hand: 'rh' as const, notes: 4, hits: 4, wrong: 0, timed: 0, onTime: 0, pauses: 0 }];
+    const base = { level: 1 as const, mode: 'learn' as const, hands: 'rh' as const, tempoScale: 0.6, startBar: 0, endBar: 7, startedAt: '2026-09-04T00:00:00Z', durationSec: 10,
+      notes: 8, hits: 8, wrong: 0, timed: 0, onTime: 0, pauses: 0, noteAccuracy: 1, bars, causes: [], clean: true, wholePiece: true };
+    const sections = [{ index: 0, startBar: 0, endBar: 3, label: 'A' }, { index: 1, startBar: 4, endBar: 7, label: 'B' }];
+    recordAttempt(stage, { ...base, ghost: ['1:lh'] }, sections, 'rh');
+    expect(stage.cleanReps).toBe(0);
+    expect(Object.keys(stage.fragments)).toEqual(['1']);
+    recordAttempt(stage, base, sections, 'rh');
+    expect(stage.cleanReps).toBe(1);
+    expect(Object.keys(stage.fragments).sort()).toEqual(['0', '1']);
+  });
+});

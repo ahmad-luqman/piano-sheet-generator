@@ -70,6 +70,8 @@ export class App {
   private store = new ProgressStore();
   private constraints: HandConstraints = loadConstraints();
   private ghostOn = readFlag('psg.ghost');
+  /** Rhythm words per section index for the current song and stage; re-applied whenever the steps regenerate. */
+  private rhythmWords = new Map<number, string>();
   /** This session's run count per candidate cell, per song and stage, for the ghost hand's hand-back cadence. */
   private ghostRuns: Record<string, Record<string, number>> = {};
   private progressPanel: ProgressPanel;
@@ -391,6 +393,7 @@ export class App {
 
   private loadSong(song: Song): void {
     this.player.pause();
+    this.rhythmWords.clear();
     this.song = song;
     if (song.notes.length === 0) { this.toast('That file has no notes.', true); return; }
     const sel = $<HTMLSelectElement>('#melody-track');
@@ -533,10 +536,8 @@ export class App {
       }).filter((r) => r.noteCount >= 2 && r.noteCount <= 40);
       const got = await rhythmWords(this.arr, requests);
       if (got.length === 0) { this.toast('Claude’s words did not fit the notes, so none were kept.', true); return; }
-      for (const m of got) {
-        const sec = this.arr.sections[m.section];
-        for (const st of this.steps) if (st.action?.hands === 'rh' && st.action.startBar === sec.startBar && st.action.endBar === sec.endBar) st.body += ` Say it as you play: “${m.words}”.`;
-      }
+      for (const m of got) this.rhythmWords.set(m.section, m.words);
+      this.applyWords();
       this.paintSteps();
       this.toast(`Words added for ${got.length} of ${requests.length} sections.`);
     } catch (err) { this.toast(`Could not ask Claude: ${msg(err)}`, true); }
@@ -592,12 +593,13 @@ export class App {
 
   /** Learn mode with the ghost hand on: play the weak cells for the learner, handing each back every third run. */
   private applyGhost(): void {
-    if (!this.ghostOn || this.player.mode !== 'learn' || !this.arr) { this.player.setGhost(new Set()); return; }
+    if (!this.ghostOn || this.player.mode !== 'learn' || !this.arr || !this.attempt) { this.player.setGhost(new Set()); return; }
     const key = `${this.songProgressKey()}|${this.levelId}`;
     const runs = this.ghostRuns[key] ?? (this.ghostRuns[key] = {});
     const plan = ghostPlan(this.stage(), runs);
     for (const cell of [...plan.ghost, ...plan.handedBack]) runs[cell] = (runs[cell] ?? 0) + 1;
     this.player.setGhost(plan.ghost);
+    if (plan.ghost.size) this.attempt.meta.ghost = [...plan.ghost];
     const text = describeGhost(plan);
     if (text) $('#status').textContent = text;
     if (plan.handedBack.size) this.toast(text);
@@ -730,7 +732,17 @@ export class App {
     const stage = this.stage();
     const next = stage?.attempts.length && this.next ? { title: this.next.title, reason: this.diagnosis ?? this.next.reason, action: this.next.action } : undefined;
     this.steps = generateSteps(this.arr, this.levelId, next);
+    this.applyWords();
     this.paintSteps();
+  }
+
+  private applyWords(): void {
+    if (!this.arr || this.rhythmWords.size === 0) return;
+    for (const [section, words] of this.rhythmWords) {
+      const sec = this.arr.sections[section];
+      if (!sec) continue;
+      for (const st of this.steps) if (st.action?.hands === 'rh' && st.action.startBar === sec.startBar && st.action.endBar === sec.endBar && !st.body.includes(words)) st.body += ` Say it as you play: “${words}”.`;
+    }
   }
 
   private paintSteps(): void {

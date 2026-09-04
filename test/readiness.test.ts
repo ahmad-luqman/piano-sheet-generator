@@ -30,6 +30,12 @@ describe('catalog readiness', () => {
     expect(sorted.map((f) => f.entry.id)).toEqual(['easy', 'hard']);
     expect(sorted[0].fit.kind).toBe('unknown');
   });
+  it('keeps an entry without a fingerprint, last and unrated', () => {
+    const bare = { ...midi('bare', 8, []), fp: undefined, suggested: undefined };
+    const sorted = sortForLearner([bare, midi('easy', 8, [1, 0.6, 12, 0, 1, 60])], { credited: 0 });
+    expect(sorted.map((f) => f.entry.id)).toEqual(['easy', 'bare']);
+    expect(sorted[1].fit.label).toBe('Not rated');
+  });
   it('lists bridge candidates with bar counts', () => {
     const c = bridgeCandidates([midi('a', 24, [1, 0.6, 12, 0, 1, 60])]);
     expect(c).toEqual([{ id: 'a', title: 'a — X', values: [1, 0.6, 12, 0, 1, 60], bars: 24 }]);

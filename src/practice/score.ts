@@ -17,6 +17,8 @@ export interface AttemptMeta {
   endBar: number;        // 0-based inclusive
   startedAt: string;     // ISO
   durationSec: number;
+  /** Bar-and-hand cells ("bar:hand") the ghost hand played; those bars prove nothing about the learner. */
+  ghost?: string[];
 }
 
 export interface BarScore {
