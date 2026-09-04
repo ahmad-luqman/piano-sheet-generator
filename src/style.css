@@ -38,6 +38,8 @@ h1, h2 { margin: 0; font-weight: 650; }
 .results .res-item .name { flex: 1; }
 .results .res-item .tag { font-size: 11px; padding: 2px 6px; border-radius: 6px; background: var(--panel-2); color: var(--muted); }
 .results .res-item .tag.catalog { background: #14532d; color: #bbf7d0; }
+.results .res-item .tag.preview { background: #3b0764; color: #e9d5ff; }
+.results .res-item img.res-art { width: 28px; height: 28px; border-radius: 4px; }
 .results .res-empty { padding: 14px; color: var(--muted); }
 .results .res-item .res-more { margin-left: 4px; }
 .results .res-item .name { display: flex; flex-direction: column; gap: 3px; min-width: 0; }

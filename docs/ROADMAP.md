@@ -250,7 +250,14 @@ third). The three Claude calls were checked for shape, not run live. New decisio
 
 ## Phase G — Any song from its sound
 
-**Status: in progress, planned 2026-09-04.** Trigger: "it doesn't search Urdu/Pakistani songs". No
+**Status: shipped 2026-09-04.** Items 1–4 landed in `src/input/transcribe.ts` (clean-up, tempo, notes to
+Song; pure), `src/input/audio.ts` (decode, the lazily loaded model, cache, microphone), `src/search/canonical.ts`
+(the preview on each iTunes candidate) and `src/ui/app.ts` (preview cards, audio file, hum, the non-Latin
+query fix). The model lives in `public/models/basic-pitch/`; TensorFlow.js and basic-pitch build into a
+separate 1.3 MB chunk that loads on first use. Verified headless with `scripts/smoke-audio.mjs`: a Twinkle
+phrase synthesized in the page comes back 14 of 14 notes; "دل دل پاکستان" shows no catalog cards, is read by
+iTunes as "Dil Dil Pakistan - Vital Signs", and its live preview transcribes into an 11-bar D minor song
+with 425 notes at 83 bpm. `TRANSCRIBE` is the decision point. Trigger: "it doesn't search Urdu/Pakistani songs". No
 open MIDI site has that repertoire (bitmidi has the national anthem and nothing else; archive.org,
 freemidi, midiworld and GitHub turned up nothing usable, verified 2026-09-04), so the source has to
 be sound rather than MIDI.
@@ -306,7 +313,7 @@ that for the short ones. A full practice session with everything on is a few cen
 
 ## Suggested order
 
-A → D → B → E → C → F → G. A–F are shipped as of 2026-09-04; G is in progress.
+A → D → B → E → C → F → G. All seven are shipped as of 2026-09-04; what remains is tuning the decision points.
 
 Reasoning: A and D each change what a beginner experiences on day one and need no new
 services. The fingerprint lands at the end of A so both B and D can use it. E is the largest and

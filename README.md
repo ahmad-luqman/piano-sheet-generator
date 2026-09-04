@@ -11,6 +11,10 @@ is one click away for those who can.
 - **Song search** on bitmidi.com (no backend needed), re-ranked locally and grouped one card per song, plus `.mid` upload, MIDI URL, and a
   bundled library: 8 hand-entered beginner pieces (Twinkle Twinkle, Ode to Joy, Für Elise, Canon in D, …) and 259 public-domain
   solo-piano works from the Mutopia Project (Beethoven, Czerny, Chopin, Mozart, Burgmüller, Joplin, Bach, …) that work offline.
+- **Any song from its sound**: when no MIDI exists (most Urdu, Pakistani and Bollywood songs), the iTunes hit's 30-second
+  preview is transcribed in your browser (Spotify's basic-pitch on TensorFlow.js, loaded on first use) and arranged like
+  any MIDI. The same pipeline takes an **audio file** from your computer or ten seconds **hummed** into the microphone.
+  Queries in Urdu, Arabic or Devanagari script go straight to the title lookup.
 - **Did you mean**: a misspelling or a description ("yesturday beetles", "that sad piano song from Interstellar") is resolved to real
   titles through iTunes Search, with MusicBrainz as the fallback, or through Claude when you add a key and the query reads as a
   description. No result plus a confident candidate hops once to that title and says so above the results.
@@ -92,6 +96,7 @@ making yourself:
 | `src/practice/skills.ts` → `READINESS` | What a clean slow run proves, and how far above the profile is still "a small stretch". |
 | `src/sheet/steps.ts` → `BLOCKS` | How much of a piece a motif or a handful of chord shapes must cover before they are taught first. |
 | `src/practice/ghost.ts` → `GHOST` | Which bars the ghost hand takes over, and how often they are handed back. |
+| `src/input/transcribe.ts` → `TRANSCRIBE` | What counts as a heard note (length, loudness, range) and the tempo range a transcription may land in. |
 
 ## Known limits
 
@@ -105,6 +110,9 @@ making yourself:
 - iTunes Search allows about twenty lookups a minute; it is only asked when results are empty or weak.
 - The skill profile only grows from clean whole-piece runs in Rhythm or Perform mode; Learn runs feed the heat map but
   prove nothing about tempo. Progress saved before this feature carries no fingerprints and does not count.
+- A transcribed preview is thirty seconds of the recording, not the whole song, and the melody pick follows the loudest
+  line of a full mix, usually the voice. Bar lines start at the first heard note. Where a MIDI upload exists it is the
+  better source. The model and TensorFlow.js are a 2.2 MB download the first time you transcribe.
 - Reading sheet music from a photo is rough: a clear melody line or lead sheet works, a dense score does not. Anything
   the parser cannot read rejects the whole answer rather than guessing.
 - bitmidi hosts user uploads of varying quality and copyright status. The version badges judge

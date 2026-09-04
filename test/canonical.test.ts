@@ -8,12 +8,13 @@ import mb from './fixtures/musicbrainz-yesturday-beetles.json';
 describe('canonical lookup: iTunes', () => {
   it('reads songs with their artist', () => {
     const raw = candidatesFromItunes(itunes);
-    expect(raw[0]).toEqual({ title: 'Yesterday', artist: 'The Beatles', source: 'itunes' });
+    expect(raw[0]).toMatchObject({ title: 'Yesterday', artist: 'The Beatles', source: 'itunes' });
     expect(raw.length).toBe(10);
   });
   it('keeps only the candidates that explain the whole query when one does', () => {
     const ranked = rankCandidates(candidatesFromItunes(itunes), 'yesturday beetles');
-    expect(ranked).toEqual([{ title: 'Yesterday', artist: 'The Beatles', source: 'itunes' }]);
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0]).toMatchObject({ title: 'Yesterday', artist: 'The Beatles', source: 'itunes' });
   });
   it('keeps partial matches, most words first, when nothing explains everything', () => {
     const raw: QueryCandidate[] = [

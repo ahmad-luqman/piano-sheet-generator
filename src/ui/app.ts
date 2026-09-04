@@ -34,6 +34,8 @@ import { ProgressPanel } from './progress';
 import { chooseAccompaniment, diagnoseErrors, enrichSteps, explainChord, explainVersions, getApiKey, readSheetPhoto, recommendSongs, rhythmWords, setApiKey, understandQuery, writeJournal, type RecommendCandidate } from '../llm/claude';
 import { candidateQuery, lookupCanonical, sameAsQuery, SOURCE_LABEL, type QueryCandidate } from '../search/canonical';
 import { looksLikeProse, resultsAreWeak } from '../search/intent';
+import { normalizeQuery } from '../search/normalize';
+import { recordMicrophone, transcribeAudio, transcribeSamples, type Progress } from '../input/audio';
 
 const $ = <T extends HTMLElement>(sel: string): T => {
   const el = document.querySelector<T>(sel);
@@ -219,6 +221,8 @@ export class App {
     $('#btn-enrich').addEventListener('click', () => void this.coach());
     $('#btn-words').addEventListener('click', () => void this.words());
     $<HTMLInputElement>('#photo-input').addEventListener('change', (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) void this.photo(f); (e.target as HTMLInputElement).value = ''; });
+    $<HTMLInputElement>('#audio-input').addEventListener('change', (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) void this.audioFile(f); (e.target as HTMLInputElement).value = ''; });
+    $('#btn-hum').addEventListener('click', () => void this.hum());
 
     $<HTMLSelectElement>('#melody-track').addEventListener('change', (e) => {
       if (!this.song) return;
@@ -249,7 +253,8 @@ export class App {
     const ac = new AbortController(); this.searchAbort = ac;
     const { redirect } = opts;
     const note = redirect ? `${SOURCE_LABEL[redirect.via.source]} read “${redirect.from}” as this` : undefined;
-    const local = searchCatalog(q).slice(0, MAX_CATALOG_HITS).map(({ entry, score }) => catalogResult(entry, score));
+    // A query in a script the normalizer cannot fold (Urdu, Devanagari…) has no tokens: the catalog cannot match it, iTunes can.
+    const local = normalizeQuery(q).tokens.length ? searchCatalog(q).slice(0, MAX_CATALOG_HITS).map(({ entry, score }) => catalogResult(entry, score)) : [];
     this.showResults(searchGroups(local, q), q, false, [note, 'Searching bitmidi.com…'].filter(Boolean).join(' · '));
     // Ask Claude while bitmidi is searching; both answers are wanted for a description.
     const askClaude = !redirect && !opts.noAssist && !!getApiKey() && looksLikeProse(q);
@@ -269,6 +274,7 @@ export class App {
     }
     if (redirect) {
       this.showSuggestions(redirect.alternatives, 'Or did you mean:', { label: `“${redirect.from}” as typed`, run: () => void this.search(redirect.from, { noAssist: true }) });
+      this.showPreviewCards([redirect.via, ...redirect.alternatives]);
       return;
     }
     if (opts.noAssist || !resultsAreWeak(groups)) return;
@@ -293,6 +299,70 @@ export class App {
       return;
     }
     this.showSuggestions(candidates, `${SOURCE_LABEL[candidates[0].source]} suggests:`);
+    this.showPreviewCards(candidates);
+  }
+
+  /** iTunes candidates with a preview become cards: thirty seconds of the real recording, transcribed in the browser. */
+  private showPreviewCards(candidates: QueryCandidate[]): void {
+    const withPreview = candidates.filter((c) => c.preview);
+    if (withPreview.length === 0) return;
+    const box = $('#results');
+    const head = document.createElement('div'); head.className = 'res-head';
+    head.innerHTML = '<span>No MIDI file? Transcribe thirty seconds of the recording instead. Rough: the loudest line becomes the melody.</span>';
+    box.appendChild(head);
+    for (const c of withPreview) {
+      const row = document.createElement('div'); row.className = 'res-item';
+      const art = c.preview!.artwork ? `<img class="res-art" src="${esc(c.preview!.artwork)}" alt="" />` : '';
+      row.innerHTML = `<span class="tag preview">preview</span>${art}<span class="name"><span class="res-title">${esc(c.title)}${c.artist ? ` <span class="muted">· ${esc(c.artist)}</span>` : ''}</span></span>` +
+        `<span class="muted small">30 s of ${fmtSeconds(c.preview!.seconds)}</span>`;
+      const b = document.createElement('button'); b.className = 'btn small primary'; b.textContent = 'Transcribe';
+      b.addEventListener('click', (e) => { e.stopPropagation(); void this.transcribePreview(c, b); });
+      row.appendChild(b);
+      row.addEventListener('click', () => void this.transcribePreview(c, b));
+      box.appendChild(row);
+    }
+  }
+
+  private async transcribePreview(c: QueryCandidate, button: HTMLButtonElement): Promise<void> {
+    if (!c.preview) return;
+    button.disabled = true; button.textContent = 'Working…';
+    try {
+      const res = await fetch(c.preview.url);
+      if (!res.ok) throw new Error(`preview download failed: HTTP ${res.status}`);
+      await this.transcribe(await res.arrayBuffer(), { title: `${c.title}${c.artist ? ` — ${c.artist}` : ''}`, source: 'preview', cacheKey: c.preview.url });
+      this.hideResults();
+    } catch (err) { this.toast(`Could not transcribe: ${msg(err)}`, true); }
+    finally { button.disabled = false; button.textContent = 'Transcribe'; }
+  }
+
+  /** Shared by previews, audio files and the microphone: progress in the status line, the result loaded like any song. */
+  private async transcribe(data: ArrayBuffer, opts: { title: string; source: string; cacheKey?: string }): Promise<void> {
+    const status = $('#status');
+    const onProgress: Progress = (phase, pct) => {
+      status.textContent = phase === 'decode' ? 'Decoding audio…' : phase === 'model' ? (pct < 100 ? 'Loading the transcription model (2 MB, first time only)…' : 'Model ready.') : `Listening… ${Math.round(pct)}%`;
+    };
+    this.toast(`Transcribing “${opts.title}” in your browser…`);
+    const { song, notes, bpm, cached } = await transcribeAudio(data, { ...opts, onProgress });
+    status.textContent = '';
+    this.loadSong(song);
+    this.toast(`${cached ? 'From the cache: ' : ''}${notes} notes heard at about ${bpm} bpm. Rough by design; pick another melody track if the tune is wrong.`);
+  }
+
+  private async audioFile(file: File): Promise<void> {
+    if (file.size > 40 * 1024 * 1024) { this.toast('That file is over 40 MB; a single song works best.', true); return; }
+    try { await this.transcribe(await file.arrayBuffer(), { title: file.name.replace(/\.[a-z0-9]+$/i, ''), source: 'audio', cacheKey: `file:${file.name}:${file.size}` }); }
+    catch (err) { this.toast(`Could not transcribe: ${msg(err)}`, true); }
+  }
+
+  private async hum(): Promise<void> {
+    const btn = $<HTMLButtonElement>('#btn-hum');
+    btn.disabled = true;
+    try {
+      this.player.pause();
+      const data = await recordMicrophone(10, (left) => { $('#status').textContent = `Recording… ${left} s left. Hum or sing the tune.`; btn.textContent = `● ${left}`; });
+      await this.transcribe(data, { title: `Hummed melody ${new Date().toLocaleTimeString()}`, source: 'hum' });
+    } catch (err) { this.toast(`Could not record: ${msg(err)}`, true); }
+    finally { btn.disabled = false; btn.textContent = 'Hum it'; }
   }
 
   /** One card per song; uploads of the same title sit behind a "N versions" toggle. */
@@ -467,6 +537,9 @@ export class App {
   private songProgressKey(): string | null { return this.arr && this.song ? songKey(this.arr, this.song) : null; }
   private stage(): StageProgress | undefined { const k = this.songProgressKey(); return k ? this.store.peek(k, this.levelId) : undefined; }
   private songProgress(): SongProgress | undefined { const k = this.songProgressKey(); return k ? this.store.load()[k] : undefined; }
+
+  /** Dev hook for the headless audio check: 22.05 kHz mono samples in, detected notes out. */
+  transcribeSamples(samples: Float32Array): ReturnType<typeof transcribeSamples> { return transcribeSamples(samples); }
 
   /** Fingerprint values of one stage of the current song at its tempo; stored with attempts and compared with the profile. */
   stageFingerprint(level: LevelId): number[] | undefined {
@@ -944,5 +1017,6 @@ function catalogResult(c: CatalogEntry, relevance?: number, fit?: CatalogFit): S
   return r;
 }
 function msg(e: unknown): string { return e instanceof Error ? e.message : String(e); }
+function fmtSeconds(s: number): string { return s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : 'the track'; }
 function readFlag(key: string): boolean { try { return localStorage.getItem(key) === '1'; } catch { return false; } }
 function writeFlag(key: string, on: boolean): void { try { on ? localStorage.setItem(key, '1') : localStorage.removeItem(key); } catch { /* private mode */ } }

@@ -15,6 +15,8 @@ export interface QueryCandidate {
   artist?: string;
   reason?: string;
   source: 'itunes' | 'musicbrainz' | 'claude';
+  /** iTunes only: a 30-second preview the browser may read (CORS-open), the full track length, cover art. */
+  preview?: { url: string; seconds: number; artwork?: string };
 }
 
 export const SOURCE_LABEL: Record<QueryCandidate['source'], string> = { itunes: 'iTunes', musicbrainz: 'MusicBrainz', claude: 'Claude' };
@@ -72,11 +74,14 @@ export function cleanTrackTitle(name: string): string {
 export function candidatesFromItunes(json: unknown): QueryCandidate[] {
   const results = (json as { results?: unknown[] })?.results ?? [];
   const out: QueryCandidate[] = [];
-  for (const r of results as { kind?: string; trackName?: string; artistName?: string }[]) {
+  for (const r of results as { kind?: string; trackName?: string; artistName?: string; previewUrl?: string; trackTimeMillis?: number; artworkUrl60?: string }[]) {
     if (r.kind && r.kind !== 'song') continue;
     if (typeof r.trackName !== 'string') continue;
     const title = cleanTrackTitle(r.trackName);
-    if (title) out.push({ title, artist: typeof r.artistName === 'string' ? r.artistName : undefined, source: 'itunes' });
+    if (!title) continue;
+    const c: QueryCandidate = { title, artist: typeof r.artistName === 'string' ? r.artistName : undefined, source: 'itunes' };
+    if (typeof r.previewUrl === 'string' && r.previewUrl.startsWith('https://')) c.preview = { url: r.previewUrl, seconds: Math.round((r.trackTimeMillis ?? 0) / 1000), artwork: typeof r.artworkUrl60 === 'string' ? r.artworkUrl60 : undefined };
+    out.push(c);
   }
   return out;
 }
