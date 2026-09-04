@@ -10,6 +10,8 @@ import { describeReport, KEYBOARDS, loadConstraints, saveConstraints, SPANS, typ
 import { bridgeSong, readiness, skillProfile, type Bridge, type Readiness, type SkillProfile } from '../practice/skills';
 import type { CatalogFit } from '../catalog/readiness';
 import { downloadMidi, searchBitmidiAll, type SearchResult } from '../search/bitmidi';
+import { parseMusicXml, readScoreFile } from '../input/musicxml';
+import { songFromPages, type SheetTranscription } from '../llm/validate';
 import { searchGroups, type RankedResult, type SongGroup } from '../search/rank';
 import { analyzeVersions, cachedAnalysis, type VersionAnalysis, type VersionSort } from '../search/analyze';
 import { GroupCard } from './versions';
@@ -151,7 +153,7 @@ export class App {
     $('#btn-catalog').addEventListener('click', () => this.showLibrary());
     $<HTMLInputElement>('#file-input').addEventListener('change', async (e) => {
       const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return;
-      try { this.loadSong(parseMidi(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, ''), 'upload')); } catch (err) { this.toast(`Could not read that file: ${msg(err)}`, true); }
+      try { this.loadSong(await readScore(await f.arrayBuffer(), f.name, 'upload')); } catch (err) { this.toast(`Could not read that file: ${msg(err)}`, true); }
       (e.target as HTMLInputElement).value = '';
     });
     $('#btn-url').addEventListener('click', () => $<HTMLDialogElement>('#dlg-url').showModal());
@@ -220,7 +222,7 @@ export class App {
     $<HTMLInputElement>('#volume').addEventListener('input', (e) => this.audio.setVolumeDb(parseInt((e.target as HTMLInputElement).value, 10)));
     $('#btn-enrich').addEventListener('click', () => void this.coach());
     $('#btn-words').addEventListener('click', () => void this.words());
-    $<HTMLInputElement>('#photo-input').addEventListener('change', (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) void this.photo(f); (e.target as HTMLInputElement).value = ''; });
+    $<HTMLInputElement>('#photo-input').addEventListener('change', (e) => { const fs = [...((e.target as HTMLInputElement).files ?? [])]; if (fs.length) void this.photo(fs); (e.target as HTMLInputElement).value = ''; });
     $<HTMLInputElement>('#audio-input').addEventListener('change', (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) void this.audioFile(f); (e.target as HTMLInputElement).value = ''; });
     $('#btn-hum').addEventListener('click', () => void this.hum());
 
@@ -467,8 +469,10 @@ export class App {
   private async loadFromUrl(url: string, title: string): Promise<void> {
     this.toast(`Downloading “${title}”…`);
     try {
-      const buf = await downloadMidi(url);
-      this.loadSong(parseMidi(buf, title, url.includes('bitmidi') ? 'bitmidi' : 'url'));
+      if (url.includes('bitmidi')) { this.loadSong(parseMidi(await downloadMidi(url), title, 'bitmidi')); return; }
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
+      this.loadSong(await readScore(await res.arrayBuffer(), title, 'url'));
     } catch (err) { this.toast(`Could not load: ${msg(err)}`, true); }
   }
 
@@ -628,19 +632,32 @@ export class App {
     finally { btn.disabled = false; btn.textContent = '✨ Words'; }
   }
 
-  /** A photo of sheet music: Claude writes the note DSL, parseDsl validates it, and the result loads like any song. */
-  private async photo(file: File): Promise<void> {
+  /**
+   * Photos of sheet music, one or many pages in file-name order: Claude writes the note DSL
+   * per page, parseDsl validates every page, and the pages are joined end to end.
+   */
+  private async photo(files: File[]): Promise<void> {
     if (!getApiKey()) { this.toast('Add your Anthropic API key in Settings (⚙) to read sheet music from a photo.', true); $<HTMLDialogElement>('#dlg-settings').showModal(); return; }
-    const type = file.type as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
-    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(type)) { this.toast('Use a JPEG, PNG, GIF or WebP photo.', true); return; }
-    if (file.size > 5 * 1024 * 1024) { this.toast('That photo is over 5 MB; a phone-sized JPEG works best.', true); return; }
-    this.toast('Reading the sheet music… this takes a few seconds.');
+    const pages = [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    for (const f of pages) {
+      if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(f.type)) { this.toast(`${f.name}: use JPEG, PNG, GIF or WebP.`, true); return; }
+      if (f.size > 5 * 1024 * 1024) { this.toast(`${f.name} is over 5 MB; a phone-sized JPEG works best.`, true); return; }
+    }
+    const status = $('#status');
     try {
-      const data = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1] ?? ''); r.onerror = () => reject(r.error); r.readAsDataURL(file); });
-      const { song, notes } = await readSheetPhoto({ data, mediaType: type });
-      this.loadSong(song);
-      if (notes) this.toast(`Read from the photo. Claude notes: ${notes}`);
-    } catch (err) { this.toast(`Could not read the photo: ${msg(err)}`, true); }
+      const read: SheetTranscription[] = [];
+      const caveats: string[] = [];
+      for (let i = 0; i < pages.length; i++) {
+        status.textContent = `Reading page ${i + 1} of ${pages.length}…`;
+        const data = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1] ?? ''); r.onerror = () => reject(r.error); r.readAsDataURL(pages[i]); });
+        const { notes, transcription } = await readSheetPhoto({ data, mediaType: pages[i].type as 'image/jpeg' }, { index: i, count: pages.length, previous: read[read.length - 1] });
+        read.push(transcription);
+        if (notes) caveats.push(`p${i + 1}: ${notes}`);
+      }
+      status.textContent = '';
+      this.loadSong(songFromPages(read));
+      this.toast(`Read ${pages.length} page${pages.length === 1 ? '' : 's'}.${caveats.length ? ` Claude notes: ${caveats.join(' · ')}` : ''}`);
+    } catch (err) { status.textContent = ''; this.toast(`Could not read the photo: ${msg(err)}`, true); }
   }
 
   /** Readiness of the current stage and a bridge song, for the progress panel. */
@@ -1026,6 +1043,12 @@ function catalogResult(c: CatalogEntry, relevance?: number, fit?: CatalogFit): S
   if (isMidiEntry(c)) { r.origin = c.origin; r.detail = describeLength(c); r.downloadUrl = c.url; }
   if (fit) r.fit = { label: fit.fit.label, tone: fitTone(fit.fit), title: `Stage ${fit.suggested}: ${fit.fit.detail}` };
   return r;
+}
+/** MIDI, MusicXML or .mxl, told apart by content. */
+async function readScore(data: ArrayBuffer, name: string, source: string): Promise<Song> {
+  const sniffed = await readScoreFile(data, name);
+  const title = name.replace(/\.(midi?|xml|musicxml|mxl)$/i, '');
+  return sniffed.kind === 'midi' ? parseMidi(data, title, source) : parseMusicXml(sniffed.xml!, title);
 }
 function msg(e: unknown): string { return e instanceof Error ? e.message : String(e); }
 function fmtSeconds(s: number): string { return s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : 'the track'; }

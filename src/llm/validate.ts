@@ -52,6 +52,22 @@ export function validMnemonics(raw: unknown, requests: MnemonicRequest[]): Mnemo
 
 export interface SheetTranscription { title: string; bpm: number; timeSig: { num: number; den: number }; rh: string; lh?: string; notes?: string }
 
+/** Several photographed pages become one song: each page's DSL starts where the longer hand of the previous page ended. */
+export function songFromPages(pages: SheetTranscription[], minNotes = 4): Song {
+  if (pages.length === 0) throw new Error('No pages.');
+  const first = pages[0];
+  let offset = 0;
+  let rh = '', lh = '';
+  for (const p of pages) {
+    const r = parseDsl(p.rh ?? '', 0, 0.85), l = p.lh?.trim() ? parseDsl(p.lh, 1, 0.65) : [];
+    const end = Math.max(0, ...r.map((n) => n.startBeat + n.durationBeats), ...l.map((n) => n.startBeat + n.durationBeats));
+    rh += ` @${offset} ${p.rh ?? ''}`;
+    if (p.lh?.trim()) lh += ` @${offset} ${p.lh}`;
+    offset += end;
+  }
+  return songFromTranscription({ ...first, rh, lh, title: first.title }, minNotes);
+}
+
 /**
  * Build a Song from the model's DSL. parseDsl throws on any token it does not understand,
  * which is the validation: a made-up note name or duration never reaches the pipeline.

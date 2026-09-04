@@ -42,7 +42,9 @@ is one click away for those who can.
 - **How to play** steps: hand position, right hand by section, left-hand chords, hands together,
   tempo ramp. Optional rewrite by Claude with your own API key, plus **rhythm words** (one syllable per note, checked by
   code), **what to play next** picks from the library, and a **sheet-photo** input where Claude writes the note DSL and the
-  parser validates it.
+  parser validates it, one page or several in order.
+- **Scores**: open a MIDI, MusicXML or .mxl file (MuseScore, Sibelius, Finale and Dorico all export MusicXML; two staves
+  become right and left hand, ties and chords are kept, repeats play once), or paste a URL to one.
 - **Inputs**: mouse/touch, computer keyboard (two octaves, arrow keys to shift), Web MIDI keyboards.
 - **Sound**: sampled Salamander grand piano (Tone.js) with a synth fallback, metronome, sustain (Space).
 

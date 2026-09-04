@@ -29,6 +29,7 @@ Primary user: someone with a keyboard at home, no theory background, who wants
 | MIDI URL paste | Planned | Only works if the host allows CORS. Show a clear error if not. |
 | Bundled public-domain catalog | Shipped | 8 hand-entered pieces in a text note DSL (`src/catalog/songs.ts`) plus 259 solo-piano MIDI files from the Mutopia Project pulled at build time by `scripts/ingest-mutopia.mjs` into `public/catalog/` with a JSON index. Works offline and demos without copyright ambiguity. |
 | iTunes Search, MusicBrainz | Shipped | Both CORS-open. Resolve misspellings and descriptions to canonical titles when MIDI search finds little; bitmidi is then searched with the title. |
+| MusicXML / .mxl files | Shipped | `src/input/musicxml.ts`: the notation itself from any score editor. Partwise scores, multiple parts, two staves per part, ties, chords, backup/forward; repeats once. |
 | iTunes previews + basic-pitch | Shipped | Previews are CORS-open; the browser transcribes thirty seconds with Spotify's basic-pitch (TensorFlow.js, model bundled under `public/models/`). Also audio files and the microphone. The only path for repertoire no MIDI site carries. |
 
 Because bitmidi is CORS-open there is **no backend**. The app is a static site.

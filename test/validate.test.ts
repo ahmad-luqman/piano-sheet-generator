@@ -35,3 +35,15 @@ describe('sheet photo transcription', () => {
     expect(() => songFromTranscription({ title: '', bpm: 100, timeSig: { num: 4, den: 4 }, rh: 'C4 D4' })).toThrow(/Only 2 melody notes/);
   });
 });
+
+describe('multi-page sheet photos', () => {
+  it('joins pages end to end from the longer hand of each page', async () => {
+    const { songFromPages } = await import('../src/llm/validate');
+    const p1 = { title: 'Song', bpm: 120, timeSig: { num: 4, den: 4 }, rh: 'C4 D4 E4 F4', lh: 'C3:4 | C3:2' };
+    const p2 = { title: 'Song', bpm: 120, timeSig: { num: 4, den: 4 }, rh: 'G4 A4', lh: 'G3:2' };
+    const song = songFromPages([p1, p2]);
+    const rh = song.notes.filter((n) => n.track === 0).map((n) => [n.midi, n.startBeat]);
+    expect(rh).toEqual([[60, 0], [62, 1], [64, 2], [65, 3], [67, 6], [69, 7]]);
+    expect(song.notes.filter((n) => n.track === 1).map((n) => n.startBeat)).toEqual([0, 4, 6]);
+  });
+});

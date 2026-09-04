@@ -409,8 +409,11 @@ const DSL_HELP = 'Note DSL, whitespace separated: C4 (one beat), G4:2 (two beats
  * parseDsl validates every token; anything it cannot parse rejects the whole answer.
  * Rough by design: a lead sheet or a simple melody, not a full score.
  */
-export async function readSheetPhoto(file: { data: string; mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' }): Promise<{ song: Song; notes?: string }> {
+export async function readSheetPhoto(file: { data: string; mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' }, page?: { index: number; count: number; previous?: SheetTranscription }): Promise<{ song: Song; notes?: string; transcription: SheetTranscription }> {
   const c = client();
+  const pageNote = page && page.count > 1
+    ? ` This is page ${page.index + 1} of ${page.count}.` + (page.previous ? ` The previous page ended in ${page.previous.timeSig.num}/${page.previous.timeSig.den} at ${page.previous.bpm} bpm; keep the same title, tempo and meter, and transcribe only the bars on this page, in order.` : '')
+    : '';
   const res = await c.messages.create({
     model: MODEL,
     max_tokens: 3000,
@@ -418,11 +421,11 @@ export async function readSheetPhoto(file: { data: string; mediaType: 'image/jpe
     system: 'Transcribe the sheet music in the photo. ' + DSL_HELP + ' Use the printed tempo if there is one, else a sensible one for the style. Never invent bars you cannot see.',
     messages: [{ role: 'user', content: [
       { type: 'image', source: { type: 'base64', media_type: file.mediaType, data: file.data } },
-      { type: 'text', text: 'Transcribe this.' },
+      { type: 'text', text: `Transcribe this.${pageNote}` },
     ] }],
   });
   checkRefusal(res);
   const parsed = JSON.parse(textOf(res)) as SheetTranscription;
   const song = songFromTranscription(parsed);
-  return { song, notes: parsed.notes?.trim() || undefined };
+  return { song, notes: parsed.notes?.trim() || undefined, transcription: parsed };
 }
