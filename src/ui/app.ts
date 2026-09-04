@@ -6,6 +6,7 @@ import { fingerprint, fingerprintValues } from '../arrange/difficulty';
 import { allCatalog, CATALOG, catalogById, isMidiEntry, loadCatalogEntry, loadCatalogSong, registerCatalog, searchCatalog, type CatalogEntry } from '../catalog/songs';
 import { describeLength, loadMutopiaIndex } from '../catalog/mutopia';
 import { bridgeCandidates, catalogFit, fitTone, sortForLearner } from '../catalog/readiness';
+import { describeReport, KEYBOARDS, loadConstraints, saveConstraints, SPANS, type HandConstraints, type KeyboardSize } from '../arrange/constraints';
 import { bridgeSong, readiness, skillProfile, type Bridge, type Readiness, type SkillProfile } from '../practice/skills';
 import type { CatalogFit } from '../catalog/readiness';
 import { downloadMidi, searchBitmidiAll, type SearchResult } from '../search/bitmidi';
@@ -66,6 +67,7 @@ export class App {
   private cards: GroupCard[] = [];
   private lastFeedbackTimers = new Map<number, number>();
   private store = new ProgressStore();
+  private constraints: HandConstraints = loadConstraints();
   private progressPanel: ProgressPanel;
   private attempt: { meta: AttemptMeta; results: StepResult[]; startedMs: number } | null = null;
   private lastScore: AttemptScore | null = null;
@@ -185,6 +187,16 @@ export class App {
       $<HTMLDialogElement>('#dlg-settings').showModal();
     });
     $<HTMLInputElement>('#api-key').addEventListener('change', (e) => setApiKey((e.target as HTMLInputElement).value.trim() || null));
+    const keys = $<HTMLSelectElement>('#opt-keys'), span = $<HTMLSelectElement>('#opt-span');
+    for (const [k, v] of Object.entries(KEYBOARDS)) keys.add(new Option(v.name, k));
+    for (const s of SPANS) span.add(new Option(s.name, String(s.value)));
+    keys.value = String(this.constraints.keys); span.value = String(this.constraints.span);
+    const onHands = () => {
+      this.constraints = { keys: parseInt(keys.value, 10) as KeyboardSize, span: parseInt(span.value, 10) };
+      saveConstraints(this.constraints);
+      this.arrange(this.arr?.melodyTrack);
+    };
+    keys.addEventListener('change', onHands); span.addEventListener('change', onHands);
     $<HTMLInputElement>('#opt-fingers').addEventListener('change', (e) => this.beginner.setOptions({ showFingers: (e.target as HTMLInputElement).checked }));
     $<HTMLInputElement>('#opt-letters').addEventListener('change', (e) => this.beginner.setOptions({ showLetters: (e.target as HTMLInputElement).checked }));
     $<HTMLInputElement>('#opt-falling').addEventListener('change', (e) => this.piano.setNotes((e.target as HTMLInputElement).checked ? (this.level?.notes ?? []) : []));
@@ -386,11 +398,12 @@ export class App {
   private arrange(melodyTrack?: number): void {
     if (!this.song) return;
     try {
-      this.arr = buildArrangement(this.song, { melodyTrack, transposeEarly: this.transposeEarly, easeHardSections: this.easeHard, sectionPatterns: this.sectionPatterns });
+      this.arr = buildArrangement(this.song, { melodyTrack, transposeEarly: this.transposeEarly, easeHardSections: this.easeHard, sectionPatterns: this.sectionPatterns, constraints: this.constraints });
     } catch (err) { this.toast(`Could not arrange: ${msg(err)}`, true); return; }
     $<HTMLSelectElement>('#melody-track').value = String(this.arr.melodyTrack);
     $('#song-title').textContent = this.arr.title;
-    $('#song-info').textContent = `${this.arr.key.name} · ${this.arr.bpm} bpm · ${this.arr.timeSig.num}/${this.arr.timeSig.den} · ${this.arr.totalBars} bars · ${this.song.source}`;
+    const hands = this.arr.constraintReport ? describeReport(this.arr.constraintReport, this.constraints) : '';
+    $('#song-info').textContent = `${this.arr.key.name} · ${this.arr.bpm} bpm · ${this.arr.timeSig.num}/${this.arr.timeSig.den} · ${this.arr.totalBars} bars · ${this.song.source}${hands ? ` · ${hands}` : ''}`;
     const sug = this.arr.suggestedLevel;
     $('#level-hint').textContent = sug ? `Suggested start: stage ${sug.level}; ${sug.reason}.` : '';
     const partner = this.arr.partnerTrack !== undefined ? this.song.tracks.find((t) => t.index === this.arr!.partnerTrack) : undefined;

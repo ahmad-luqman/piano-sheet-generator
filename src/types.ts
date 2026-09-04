@@ -111,6 +111,8 @@ export interface Arrangement {
   partnerTrack?: number;         // the track paired with the melody as the original left hand
   tracks: TrackInfo[];
   suggestedLevel?: { level: LevelId; reason: string };
+  /** What the hand constraints changed across the six stages, when any were set. */
+  constraintReport?: { moved: number; folded: number; revoiced: number; dropped: number };
 }
 
 export const LEVEL_META: Record<LevelId, { name: string; description: string }> = {
