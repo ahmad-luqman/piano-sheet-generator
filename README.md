@@ -8,8 +8,12 @@ is one click away for those who can.
 
 ## Features
 
-- **Song search** on bitmidi.com (no backend needed), re-ranked locally and grouped one card per song, plus `.mid` upload, MIDI URL, and 8 bundled
-  public-domain pieces (Twinkle Twinkle, Ode to Joy, Für Elise, Canon in D, …).
+- **Song search** on bitmidi.com (no backend needed), re-ranked locally and grouped one card per song, plus `.mid` upload, MIDI URL, and a
+  bundled library: 8 hand-entered beginner pieces (Twinkle Twinkle, Ode to Joy, Für Elise, Canon in D, …) and 259 public-domain
+  solo-piano works from the Mutopia Project (Beethoven, Czerny, Chopin, Mozart, Burgmüller, Joplin, Bach, …) that work offline.
+- **Did you mean**: a misspelling or a description ("yesturday beetles", "that sad piano song from Interstellar") is resolved to real
+  titles through iTunes Search, with MusicBrainz as the fallback, or through Claude when you add a key and the query reads as a
+  description. No result plus a confident candidate hops once to that title and says so above the results.
 - **Version comparison**: open a song's versions and the app downloads and analyses the top uploads, badges each one
   (piano only or band, length, hand split, melody confidence, difficulty, suggested stage), stars the best file for a
   beginner, sorts by easiest, most complete, most popular or piano-only, and previews eight bars of the melody before you commit.
@@ -35,7 +39,12 @@ npm install
 npm run dev        # http://localhost:5173
 npm test           # pipeline unit tests
 npm run build      # static site in dist/
+npm run ingest:mutopia   # refresh public/catalog/ from mutopiaproject.org (optional; the result is committed)
 ```
+
+The Mutopia ingest pages the site's solo-piano listing, keeps single-file public-domain works, and writes
+the MIDI files plus an index under `public/catalog/`. Flags: `--limit N`, `--delay ms`, `--force`,
+`--all-licences` (adds CC-licensed pieces; the UI does not show attribution yet), `--max-notes N`.
 
 Deploys anywhere static files are served. A GitHub Pages workflow is included in
 `.github/workflows/deploy.yml` (enable Pages → Source: GitHub Actions in the repo settings).
@@ -67,6 +76,8 @@ making yourself:
 | `src/search/analyze.ts` → `RECOMMEND` | Which upload of a song should a beginner get by default: how much do piano-only, a clean hand split and a confident melody each count? |
 | `src/practice/score.ts` → `PROMOTION` | When is a run clean and a stage earned: note and timing thresholds, tempo, how many runs, how fast the aids fade. |
 | `src/practice/match.ts` → `TIMING` | How far from the beat still counts as on time. |
+| `src/search/intent.ts` → `INTENT` | When does a query read as a description rather than a title, and how weak must results be before search asks iTunes or Claude for help? |
+| `scripts/ingest-mutopia.mjs` → `wanted()` | Which Mutopia pieces belong in a beginner's library: licences, instruments, length. |
 
 ## Known limits
 
@@ -75,6 +86,9 @@ making yourself:
 - Tempo changes inside a file are flattened to the first tempo.
 - Progress lives in this browser's localStorage only; clearing site data clears it. Timing is measured from
   the app's own clock, so a laggy MIDI or keyboard path shows up as late notes.
+- Mutopia pieces are complete transcriptions, not beginner arrangements; the six stages do the simplifying. Multi-movement
+  works, which Mutopia ships as zips, are not ingested.
+- iTunes Search allows about twenty lookups a minute; it is only asked when results are empty or weak.
 - bitmidi hosts user uploads of varying quality and copyright status. The version badges judge
   instrumentation from General MIDI program numbers, so a band file that never sets programs reads as
   "piano + others" rather than "band". A format-0 file keeps everything in one track, so its drums are

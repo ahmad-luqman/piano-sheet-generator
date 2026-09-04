@@ -27,7 +27,8 @@ Primary user: someone with a keyboard at home, no theory background, who wants
 | bitmidi.com search API | Verified working, CORS `*` on search and downloads | `GET /api/midi/search?q=&page=` → `downloadUrl`. User-uploaded content, best effort. |
 | MIDI file upload | Planned | Drag and drop or file picker. |
 | MIDI URL paste | Planned | Only works if the host allows CORS. Show a clear error if not. |
-| Bundled public-domain catalog | Planned | Twinkle Twinkle, Ode to Joy, Für Elise (opening), Happy Birthday, Amazing Grace, Minuet in G, Canon in D (simplified), Greensleeves. Stored as JSON note lists, not MIDI files. Works offline and demos without copyright ambiguity. |
+| Bundled public-domain catalog | Shipped | 8 hand-entered pieces in a text note DSL (`src/catalog/songs.ts`) plus 259 solo-piano MIDI files from the Mutopia Project pulled at build time by `scripts/ingest-mutopia.mjs` into `public/catalog/` with a JSON index. Works offline and demos without copyright ambiguity. |
+| iTunes Search, MusicBrainz | Shipped | Both CORS-open. Resolve misspellings and descriptions to canonical titles when MIDI search finds little; bitmidi is then searched with the title. |
 
 Because bitmidi is CORS-open there is **no backend**. The app is a static site.
 
@@ -158,7 +159,7 @@ src/
 | Question | Decision |
 |---|---|
 | Main beginner view | Both stacked: letter sheet on top, 3D piano with falling notes below. |
-| LLM usage | Optional. User pastes their own Anthropic API key in Settings (stored in localStorage only). Used to (a) enrich how-to-play steps with plain-language coaching and (b) suggest alternate search terms when MIDI search returns nothing. Rule-based generation is always the fallback and the default. Browser calls go directly to the Claude API with the direct-browser-access header. |
+| LLM usage | Optional. User pastes their own Anthropic API key in Settings (stored in localStorage only). Used to (a) enrich how-to-play steps with plain-language coaching and (b) name the song when the query reads as a description and MIDI search finds little; iTunes fills that slot without a key. Rule-based generation is always the fallback and the default. Browser calls go directly to the Claude API with the direct-browser-access header. |
 | Inputs in v1 | Computer keyboard, mouse/touch, and Web MIDI hardware keyboards (device picker). |
 | Hosting | Static site. `vite build` output deploys to GitHub Pages or any static host. No backend. |
 

@@ -91,6 +91,20 @@ Files: `src/search/analyze.ts` (new), `src/ui/app.ts`.
 
 ## Phase C — Better sources and did-you-mean
 
+**Status: shipped 2026-09-04.** Items 1–3 landed in `src/search/canonical.ts` (iTunes and MusicBrainz
+lookups, candidate ranking), `src/search/intent.ts` (when a query reads as prose, when results are weak),
+`understandQuery` in `src/llm/claude.ts` (replaces `suggestSearchTerms`), `scripts/ingest-mutopia.mjs`
+with `scripts/mutopia-table.mjs` (the page parser) and `src/catalog/mutopia.ts`. Catalog entries are now
+either the hand-entered DSL pieces or bundled MIDI files described by `public/catalog/mutopia.json`; the
+first run ingested 259 public-domain solo-piano works (3.9 MB), CC-licensed pieces are skipped by default
+and multi-movement zips are not handled. Weak or empty results trigger the lookup; an empty result with a
+confident candidate hops once to that title and says so in the results head. Verified headless against
+live bitmidi and iTunes: "yesturday beetles" shows the Beatles' Yesterday with nine versions, "gymnopedie"
+lists Satie's three from Mutopia and loads the first, "moonlight sonata" leads with bitmidi uploads, and a
+missing index falls back to the eight bundled songs with a console warning. The Claude call was checked
+for shape, not run live. The prose heuristic, the weak-results threshold and the ingest filters are
+marked as decision points in the code.
+
 1. **LLM: natural-language query understanding.** Fires whenever the query does not look
    like a title ("that sad piano song from Interstellar", "the Beatles one that goes let
    it be"). Returns candidate titles and artists as structured output; code searches
@@ -236,7 +250,7 @@ that for the short ones. A full practice session with everything on is a few cen
 
 ## Suggested order
 
-A → D → B → E → C → F. A, D, B and E are shipped; C is next.
+A → D → B → E → C → F. A, D, B, E and C are shipped; F is what remains.
 
 Reasoning: A and D each change what a beginner experiences on day one and need no new
 services. The fingerprint lands at the end of A so both B and D can use it. E is the largest and
@@ -250,4 +264,6 @@ D, then add one call per phase where that phase's data makes it useful.
 2. ~~Transposition default (Phase D.2).~~ On for stages 1–3, toggle in the song bar.
 3. ~~Stages first with a slider later, or slider only (Phase D.3).~~ Stages now.
 4. ~~Promotion rule thresholds (Phase E.4).~~ Two clean runs at 90/80, ≥80% tempo, timed modes only. Decided 2026-09-04.
-5. Confirm the phase order, or pick the first two phases to take.
+5. ~~Confirm the phase order, or pick the first two phases to take.~~ Order kept; all of A–E and C shipped by 2026-09-04.
+6. Mutopia licence filter (Phase C.3): public domain only by default; `--all-licences` adds 198 CC pieces but the UI would then owe attribution.
+7. When search asks for help (Phase C.1/C.2): `INTENT` in `src/search/intent.ts`. Cue words and a seven-word floor decide "prose"; a best card under the phrase score decides "weak".
