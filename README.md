@@ -27,8 +27,18 @@ is one click away for those who can.
   sheet. The panel names the interval behind most errors, suggests the next drill (weakest bars, weaker hand, slower),
   builds today's set of new, weak and due sections on a spaced schedule, counts clean runs toward the next stage, and
   fades finger numbers, letters and falling notes as runs come clean. Claude can diagnose errors and write a journal note.
+- **Playable for you**: every clean timed run builds a skill profile (note density, speed, reach, stretches, jumps, tempo).
+  Library cards say *ready now*, *small stretch* or *needs two skills*, the Library sorts for you, and the progress panel
+  offers a **bridge song**: the shortest piece that adds exactly the one skill the current song needs.
+- **Pattern-first**: the melody's most repeated motif and the left hand's few chord shapes become an early step, with the
+  bars they recur in and a practise action.
+- **Your hands and keyboard**: set a 25 to 88-key keyboard and a hand span in Settings; every stage is folded into range and
+  wide chords are revoiced before fingering.
+- **Ghost hand** (Learn mode): bars you keep missing are played for you and handed back every third run.
 - **How to play** steps: hand position, right hand by section, left-hand chords, hands together,
-  tempo ramp. Optional rewrite by Claude with your own API key.
+  tempo ramp. Optional rewrite by Claude with your own API key, plus **rhythm words** (one syllable per note, checked by
+  code), **what to play next** picks from the library, and a **sheet-photo** input where Claude writes the note DSL and the
+  parser validates it.
 - **Inputs**: mouse/touch, computer keyboard (two octaves, arrow keys to shift), Web MIDI keyboards.
 - **Sound**: sampled Salamander grand piano (Tone.js) with a synth fallback, metronome, sustain (Space).
 
@@ -40,6 +50,7 @@ npm run dev        # http://localhost:5173
 npm test           # pipeline unit tests
 npm run build      # static site in dist/
 npm run ingest:mutopia   # refresh public/catalog/ from mutopiaproject.org (optional; the result is committed)
+npm run fingerprint:catalog   # re-run the pipeline over the bundled files and store per-stage fingerprints (offline)
 ```
 
 The Mutopia ingest pages the site's solo-piano listing, keeps single-file public-domain works, and writes
@@ -78,6 +89,9 @@ making yourself:
 | `src/practice/match.ts` → `TIMING` | How far from the beat still counts as on time. |
 | `src/search/intent.ts` → `INTENT` | When does a query read as a description rather than a title, and how weak must results be before search asks iTunes or Claude for help? |
 | `scripts/ingest-mutopia.mjs` → `wanted()` | Which Mutopia pieces belong in a beginner's library: licences, instruments, length. |
+| `src/practice/skills.ts` → `READINESS` | What a clean slow run proves, and how far above the profile is still "a small stretch". |
+| `src/sheet/steps.ts` → `BLOCKS` | How much of a piece a motif or a handful of chord shapes must cover before they are taught first. |
+| `src/practice/ghost.ts` → `GHOST` | Which bars the ghost hand takes over, and how often they are handed back. |
 
 ## Known limits
 
@@ -89,6 +103,10 @@ making yourself:
 - Mutopia pieces are complete transcriptions, not beginner arrangements; the six stages do the simplifying. Multi-movement
   works, which Mutopia ships as zips, are not ingested.
 - iTunes Search allows about twenty lookups a minute; it is only asked when results are empty or weak.
+- The skill profile only grows from clean whole-piece runs in Rhythm or Perform mode; Learn runs feed the heat map but
+  prove nothing about tempo. Progress saved before this feature carries no fingerprints and does not count.
+- Reading sheet music from a photo is rough: a clear melody line or lead sheet works, a dense score does not. Anything
+  the parser cannot read rejects the whole answer rather than guessing.
 - bitmidi hosts user uploads of varying quality and copyright status. The version badges judge
   instrumentation from General MIDI program numbers, so a band file that never sets programs reads as
   "piano + others" rather than "band". A format-0 file keeps everything in one track, so its drums are

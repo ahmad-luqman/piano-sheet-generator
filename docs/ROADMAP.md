@@ -205,9 +205,18 @@ Files: `src/practice/match.ts`, `src/practice/score.ts` (new), `src/practice/pro
 
 ## Phase F — The learner in the loop
 
-**Status: in progress, planned 2026-09-04.** The original list was nine ideas; this is the plan,
-in dependency order. Each sub-phase is one or two commits with a headless check. Two ideas move to
-the dropped table below.
+**Status: shipped 2026-09-04.** The original list was nine ideas; two moved to the dropped table
+and the seven below landed in dependency order, one commit each. F.1 in `src/practice/skills.ts`
+(profile, readiness, bridge) with the fingerprint stored per stage in `progress.ts`; F.2 in
+`scripts/fingerprint-catalog.ts` (a Vite server build, `npm run fingerprint:catalog`; all 259 pieces
+fingerprinted); F.3 in `src/catalog/readiness.ts`, the library order, card badges and the panel rows;
+F.4 in `src/arrange/motifs.ts` and the building-blocks step; F.5 in `src/arrange/constraints.ts` and
+Settings; F.6 in `src/llm/validate.ts` plus three calls in `claude.ts`; F.7 in `src/practice/ghost.ts`
+and the player. Verified headless with `scripts/smoke-fit.mjs` (a seeded learner sees 7 ready pieces
+first, Chopin's Fantaisie-Impromptu reads "needs 5 skills" and the bridge opens a Czerny exercise)
+and `scripts/smoke-ghost.mjs` (weak bars leave the learner's steps for two runs and return on the
+third). The three Claude calls were checked for shape, not run live. New decision points: `READINESS`,
+`BLOCKS`, `GHOST`, and the `wanted()` filter already listed.
 
 1. **Learner skill profile** (`src/practice/skills.ts`). Every scored attempt stores the difficulty
    fingerprint of what was actually played: the stage's notes at the effective tempo. The profile is,
@@ -266,7 +275,7 @@ that for the short ones. A full practice session with everything on is a few cen
 
 ## Suggested order
 
-A → D → B → E → C → F. A, D, B, E and C are shipped; F is in progress.
+A → D → B → E → C → F. All six are shipped as of 2026-09-04; what remains is tuning the decision points.
 
 Reasoning: A and D each change what a beginner experiences on day one and need no new
 services. The fingerprint lands at the end of A so both B and D can use it. E is the largest and

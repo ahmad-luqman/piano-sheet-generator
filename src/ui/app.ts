@@ -28,6 +28,7 @@ import { scoreAttempt, type AttemptMeta, type AttemptScore } from '../practice/s
 import { TIMING } from '../practice/match';
 import { barQuality } from '../practice/score';
 import { dailySet, ProgressStore, recordAttempt, scaffoldLevel, songKey, type SongProgress, type StageProgress } from '../practice/progress';
+import { describeGhost, ghostPlan } from '../practice/ghost';
 import { handsNeeded, nextAction, type NextAction } from '../practice/next';
 import { ProgressPanel } from './progress';
 import { chooseAccompaniment, diagnoseErrors, enrichSteps, explainChord, explainVersions, getApiKey, readSheetPhoto, recommendSongs, rhythmWords, setApiKey, understandQuery, writeJournal, type RecommendCandidate } from '../llm/claude';
@@ -68,6 +69,9 @@ export class App {
   private lastFeedbackTimers = new Map<number, number>();
   private store = new ProgressStore();
   private constraints: HandConstraints = loadConstraints();
+  private ghostOn = readFlag('psg.ghost');
+  /** This session's run count per candidate cell, per song and stage, for the ghost hand's hand-back cadence. */
+  private ghostRuns: Record<string, Record<string, number>> = {};
   private progressPanel: ProgressPanel;
   private attempt: { meta: AttemptMeta; results: StepResult[]; startedMs: number } | null = null;
   private lastScore: AttemptScore | null = null;
@@ -207,6 +211,8 @@ export class App {
     $<HTMLInputElement>('#opt-ease').addEventListener('change', (e) => { this.easeHard = (e.target as HTMLInputElement).checked; this.arrange(this.arr?.melodyTrack); });
     $<HTMLInputElement>('#opt-labels').addEventListener('change', (e) => this.piano.setShowLabels((e.target as HTMLInputElement).checked));
     $<HTMLInputElement>('#opt-countin').addEventListener('change', (e) => { this.player.countInBeats = (e.target as HTMLInputElement).checked ? (this.arr?.beatsPerBar ?? 4) : 0; });
+    $<HTMLInputElement>('#opt-ghost').checked = this.ghostOn;
+    $<HTMLInputElement>('#opt-ghost').addEventListener('change', (e) => { this.ghostOn = (e.target as HTMLInputElement).checked; writeFlag('psg.ghost', this.ghostOn); });
     $<HTMLInputElement>('#volume').addEventListener('input', (e) => this.audio.setVolumeDb(parseInt((e.target as HTMLInputElement).value, 10)));
     $('#btn-enrich').addEventListener('click', () => void this.coach());
     $('#btn-words').addEventListener('click', () => void this.words());
@@ -581,6 +587,20 @@ export class App {
       results: [], startedMs: performance.now(),
     };
     $('#status').textContent = '';
+    this.applyGhost();
+  }
+
+  /** Learn mode with the ghost hand on: play the weak cells for the learner, handing each back every third run. */
+  private applyGhost(): void {
+    if (!this.ghostOn || this.player.mode !== 'learn' || !this.arr) { this.player.setGhost(new Set()); return; }
+    const key = `${this.songProgressKey()}|${this.levelId}`;
+    const runs = this.ghostRuns[key] ?? (this.ghostRuns[key] = {});
+    const plan = ghostPlan(this.stage(), runs);
+    for (const cell of [...plan.ghost, ...plan.handedBack]) runs[cell] = (runs[cell] ?? 0) + 1;
+    this.player.setGhost(plan.ghost);
+    const text = describeGhost(plan);
+    if (text) $('#status').textContent = text;
+    if (plan.handedBack.size) this.toast(text);
   }
 
   private onStepResult(r: StepResult): void {
@@ -595,6 +615,7 @@ export class App {
 
   /** Score what was played, fold it into saved progress, and refresh the panel, the steps and the bar heat. */
   private finishAttempt(): void {
+    this.player.setGhost(new Set());
     const a = this.attempt; this.attempt = null;
     if (!a || !this.arr || !this.level || a.results.length < 2) return;
     const bpb = this.arr.beatsPerBar;
@@ -911,3 +932,5 @@ function catalogResult(c: CatalogEntry, relevance?: number, fit?: CatalogFit): S
   return r;
 }
 function msg(e: unknown): string { return e instanceof Error ? e.message : String(e); }
+function readFlag(key: string): boolean { try { return localStorage.getItem(key) === '1'; } catch { return false; } }
+function writeFlag(key: string, on: boolean): void { try { on ? localStorage.setItem(key, '1') : localStorage.removeItem(key); } catch { /* private mode */ } }

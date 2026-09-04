@@ -89,7 +89,15 @@ export class Player {
   setHands(h: Hands): void { this.hands = h; this.closeOpen(true); this.rebuildSteps(); }
   setMode(m: PlayMode): void { this.mode = m; this.clearWait(); this.closeOpen(true); this.rebuildSteps(); }
 
-  private userHand(n: Note): boolean { return this.hands === 'both' || n.hand === this.hands; }
+  /** Bar-and-hand cells ("bar:hand") the ghost hand plays for the learner; Learn mode only. */
+  private ghost = new Set<string>();
+
+  setGhost(cells: Set<string>): void { this.ghost = cells; this.closeOpen(true); this.rebuildSteps(); }
+
+  private userHand(n: Note): boolean {
+    if (!(this.hands === 'both' || n.hand === this.hands)) return false;
+    return !(this.mode === 'learn' && this.ghost.size && this.ghost.has(`${Math.floor(n.startBeat / this.beatsPerBar)}:${n.hand}`));
+  }
   private get timed(): boolean { return this.mode === 'rhythm' || this.mode === 'perform'; }
   private get learner(): boolean { return this.mode !== 'listen'; }
 
