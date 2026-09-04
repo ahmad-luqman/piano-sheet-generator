@@ -27,9 +27,11 @@ export interface SongGroup {
  *    exact title match  > query as a contiguous phrase in the title
  *    > fraction of query tokens present > artist match > popularity (log views)
  *  with a small penalty for every extra word in the title ("Let It Be Me").
- *  Built-in catalog matches carry a flat bonus above all of that: the catalog
- *  lookup already vetted them, and a bundled, hand-checked arrangement should
- *  never sit under a popular upload of the same tune.
+ *  Catalog matches carry a flat bonus above all of that, plus the fuzzy score the
+ *  catalog lookup gave them: it already vetted them, and a bundled piece should
+ *  never sit under a popular upload of the same tune. With hundreds of Mutopia
+ *  entries that score is what orders "sonata" sensibly; their display names are
+ *  "Title — Composer", which the file-name normalizer would read the wrong way round.
  *
  *  Change the weights here and both the order and the grouping follow. Popularity
  *  only ever breaks ties between otherwise equal titles; it never lifts a wrong
@@ -82,7 +84,7 @@ export function rankResults(results: SearchResult[], query: string): RankedResul
     .map((r) => {
       const norm = normalizeName(r.name);
       const bonus = r.source === 'catalog' ? WEIGHTS.catalog : 0;
-      return { ...r, norm, score: bonus + scoreResult(norm, q, r.views ?? 0) };
+      return { ...r, norm, score: bonus + (r.relevance ?? scoreResult(norm, q, r.views ?? 0)) };
     })
     .sort((a, b) => b.score - a.score || (b.views ?? 0) - (a.views ?? 0));
 }

@@ -84,9 +84,10 @@ export class GroupCard {
   private renderRow(): void {
     const g = this.g, best = g.best;
     const label = this.isCatalog ? esc(best.name) : esc(g.displayTitle) + (g.artist ? ` <span class="muted">· ${esc(titleCase(g.artist))}</span>` : '');
-    this.row.innerHTML = `<span class="tag ${best.source}">${this.isCatalog ? 'built-in' : 'bitmidi'}</span>` +
+    const side = best.views ? `${best.views.toLocaleString()} views` : best.detail ?? '';
+    this.row.innerHTML = `<span class="tag ${best.source}">${this.isCatalog ? esc(best.origin ?? 'built-in') : 'bitmidi'}</span>` +
       `<span class="name"><span class="res-title">${label}</span><span class="res-rec muted small"></span><span class="res-badges"></span></span>` +
-      (best.views ? `<span class="muted small">${best.views.toLocaleString()} views</span>` : '');
+      (side ? `<span class="muted small">${esc(side)}</span>` : '');
     this.row.addEventListener('click', () => this.h.pick(this.recommended?.r ?? best));
   }
 

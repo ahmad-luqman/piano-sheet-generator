@@ -1,9 +1,9 @@
 import type { Song } from '../types';
-import { songFromNotes } from '../midi/parse';
+import { parseMidi, songFromNotes } from '../midi/parse';
 import { parseDsl } from './dsl';
 import { fold, normalizeQuery, type NormalizedQuery } from '../search/normalize';
 
-export interface CatalogEntry {
+export interface CatalogBase {
   id: string;
   title: string;
   composer: string;
@@ -11,12 +11,38 @@ export interface CatalogEntry {
   aliases?: string[];
   bpm: number;
   timeSig: { num: number; den: number };
+}
+
+/** A hand-entered piece in the text DSL of ./dsl.ts. RH = track 0, LH = track 1. */
+export interface DslEntry extends CatalogBase {
   rh: string;
   lh: string;
 }
 
+/** A MIDI file bundled with the site (public/catalog/…), described by a build-time index. */
+export interface MidiEntry extends CatalogBase {
+  /** Absolute or base-relative URL of the .mid file. */
+  url: string;
+  /** Where the file came from, shown as the card's tag: "Mutopia". */
+  origin: string;
+  licence: string;
+  opus?: string;
+  date?: string;
+  style?: string;
+  arranger?: string;
+  notes: number;
+  bars: number;
+  seconds: number;
+}
+
+export type CatalogEntry = DslEntry | MidiEntry;
+
+export function isMidiEntry(e: CatalogEntry): e is MidiEntry {
+  return 'url' in e;
+}
+
 /** Public-domain pieces, hand-entered. RH = track 0, LH = track 1. */
-export const CATALOG: CatalogEntry[] = [
+export const CATALOG: DslEntry[] = [
   {
     id: 'twinkle', title: 'Twinkle Twinkle Little Star', composer: 'Traditional', aliases: ['Twinkle Twinkle', 'Ah vous dirai-je Maman', 'ABC song'], bpm: 100, timeSig: { num: 4, den: 4 },
     rh: `C4 C4 G4 G4 | A4 A4 G4:2 | F4 F4 E4 E4 | D4 D4 C4:2 | G4 G4 F4 F4 | E4 E4 D4:2 | G4 G4 F4 F4 | E4 E4 D4:2 | C4 C4 G4 G4 | A4 A4 G4:2 | F4 F4 E4 E4 | D4 D4 C4:2`,
@@ -59,11 +85,39 @@ export const CATALOG: CatalogEntry[] = [
   },
 ];
 
-export function loadCatalogSong(entry: CatalogEntry): Song {
+export function loadCatalogSong(entry: DslEntry): Song {
   const notes = [...parseDsl(entry.rh, 0, 0.85), ...parseDsl(entry.lh, 1, 0.65)];
   const song = songFromNotes(entry.title, notes, entry.bpm, entry.timeSig, 'catalog');
   song.tracks = song.tracks.map((t) => ({ ...t, name: t.index === 0 ? 'Right hand' : 'Left hand' }));
   return song;
+}
+
+/** Load any catalog entry: DSL entries synchronously from text, MIDI entries by fetching the bundled file. */
+export async function loadCatalogEntry(entry: CatalogEntry, signal?: AbortSignal): Promise<Song> {
+  if (!isMidiEntry(entry)) return loadCatalogSong(entry);
+  const res = await fetch(entry.url, { signal });
+  if (!res.ok) throw new Error(`Could not load the bundled file (HTTP ${res.status})`);
+  return parseMidi(await res.arrayBuffer(), entry.title, 'catalog');
+}
+
+// ───────────────────────── registry ─────────────────────────
+
+// Entries added at runtime, such as the Mutopia index fetched at startup. The bundled list stays first.
+let registered: CatalogEntry[] = [];
+
+/** Add entries to the searchable catalog; an id already present is replaced. */
+export function registerCatalog(entries: CatalogEntry[]): void {
+  const ids = new Set(entries.map((e) => e.id));
+  registered = [...registered.filter((e) => !ids.has(e.id)), ...entries];
+}
+
+/** Everything searchable: the bundled pieces, then whatever was registered. */
+export function allCatalog(): CatalogEntry[] {
+  return registered.length ? [...CATALOG, ...registered] : CATALOG;
+}
+
+export function catalogById(id: string): CatalogEntry | undefined {
+  return allCatalog().find((e) => e.id === id);
 }
 
 /**
@@ -71,14 +125,18 @@ export function loadCatalogSong(entry: CatalogEntry): Song {
  * ("twink") and one-typo tolerance ("twinkel"). Empty query returns everything. Results are
  * ordered best match first.
  */
-export function findCatalog(query: string): CatalogEntry[] {
+export function findCatalog(query: string, entries: CatalogEntry[] = allCatalog()): CatalogEntry[] {
+  return searchCatalog(query, entries).map((x) => x.entry);
+}
+
+/** Same lookup with the score, so the results list can rank catalog hits by it. */
+export function searchCatalog(query: string, entries: CatalogEntry[] = allCatalog()): { entry: CatalogEntry; score: number }[] {
   const q = normalizeQuery(query);
-  if (q.tokens.length === 0) return CATALOG;
-  return CATALOG
-    .map((e) => ({ e, s: catalogScore(e, q) }))
-    .filter((x) => x.s > 0)
-    .sort((a, b) => b.s - a.s)
-    .map((x) => x.e);
+  if (q.tokens.length === 0) return entries.map((entry) => ({ entry, score: 0 }));
+  return entries
+    .map((entry) => ({ entry, score: catalogScore(entry, q) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
 }
 
 /** 0 = no match; otherwise higher is better. */

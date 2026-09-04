@@ -2,7 +2,8 @@ import type { Arrangement, Chord, Hand, Level, LevelId, LhPattern, Note, Song } 
 import { LEVEL_META } from '../types';
 import { buildArrangement, defaultPattern, describeChanges, explainChordRuleBased, PATTERN_META, type SectionPattern } from '../arrange';
 import { parseMidi } from '../midi/parse';
-import { CATALOG, findCatalog, loadCatalogSong } from '../catalog/songs';
+import { allCatalog, CATALOG, catalogById, isMidiEntry, loadCatalogEntry, loadCatalogSong, registerCatalog, searchCatalog, type CatalogEntry } from '../catalog/songs';
+import { describeLength, loadMutopiaIndex } from '../catalog/mutopia';
 import { downloadMidi, searchBitmidiAll, type SearchResult } from '../search/bitmidi';
 import { searchGroups, type RankedResult, type SongGroup } from '../search/rank';
 import { analyzeVersions, cachedAnalysis, type VersionAnalysis, type VersionSort } from '../search/analyze';
@@ -100,6 +101,8 @@ export class App {
     if (this.piano.kind === '2d') this.toast('WebGL is unavailable, showing a 2D keyboard.');
     this.loadSong(loadCatalogSong(CATALOG[0]));
     $('#overlay-audio').hidden = false;
+    // The bundled Mutopia index is a few hundred pieces; searches that run before it lands just see the eight built-ins.
+    void loadMutopiaIndex().then((entries) => registerCatalog(entries)).catch((err) => this.toast(`Mutopia catalog unreadable: ${msg(err)}`, true));
   }
 
   // ───────────────────────── wiring ─────────────────────────
@@ -128,7 +131,7 @@ export class App {
 
     $<HTMLFormElement>('#search-form').addEventListener('submit', (e) => { e.preventDefault(); void this.search($<HTMLInputElement>('#search-input').value); });
     $<HTMLInputElement>('#opt-easykey').addEventListener('change', (e) => { this.transposeEarly = (e.target as HTMLInputElement).checked; this.arrange(this.arr?.melodyTrack); });
-    $('#btn-catalog').addEventListener('click', () => this.showResults(searchGroups(CATALOG.map(catalogResult), ''), '', true));
+    $('#btn-catalog').addEventListener('click', () => this.showResults(searchGroups(allCatalog().map((e) => catalogResult(e)), ''), '', true));
     $<HTMLInputElement>('#file-input').addEventListener('change', async (e) => {
       const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return;
       try { this.loadSong(parseMidi(await f.arrayBuffer(), f.name.replace(/\.midi?$/i, ''), 'upload')); } catch (err) { this.toast(`Could not read that file: ${msg(err)}`, true); }
@@ -208,7 +211,7 @@ export class App {
     if (!q) return;
     this.searchAbort?.abort();
     const ac = new AbortController(); this.searchAbort = ac;
-    const local = findCatalog(q).map(catalogResult);
+    const local = searchCatalog(q).slice(0, MAX_CATALOG_HITS).map(({ entry, score }) => catalogResult(entry, score));
     this.showResults(searchGroups(local, q), q, false, 'Searching bitmidi.com…');
     try {
       const remote = await searchBitmidiAll(q, ac.signal);
@@ -281,7 +284,14 @@ export class App {
   }
 
   private async pick(r: SearchResult): Promise<void> {
-    if (r.source === 'catalog') { const entry = CATALOG.find((c) => c.id === r.id)!; this.loadSong(loadCatalogSong(entry)); return; }
+    if (r.source === 'catalog') {
+      const entry = catalogById(r.id);
+      if (!entry) { this.toast(`“${r.name}” is no longer in the catalog.`, true); return; }
+      if (isMidiEntry(entry)) this.toast(`Loading “${entry.title}”…`);
+      try { this.loadSong(await loadCatalogEntry(entry)); }
+      catch (err) { this.toast(`Could not load: ${msg(err)}`, true); }
+      return;
+    }
     // A failed or invalid analysis is not final: a fresh download reports its own error, and a blip gets retried.
     const analysed = cachedAnalysis(r);
     if (analysed?.song) { this.loadSong(analysed.song); return; }
@@ -702,7 +712,12 @@ export class App {
   }
 }
 
-function catalogResult(c: { id: string; title: string; composer: string }): SearchResult {
-  return { id: c.id, name: `${c.title} — ${c.composer}`, downloadUrl: '', source: 'catalog' };
+/** Catalog hits above this count are noise: "sonata" matches a hundred Mutopia pieces, the best twenty is plenty. */
+const MAX_CATALOG_HITS = 20;
+
+function catalogResult(c: CatalogEntry, relevance?: number): SearchResult {
+  const r: SearchResult = { id: c.id, name: `${c.title} — ${c.composer}`, downloadUrl: '', source: 'catalog', relevance };
+  if (isMidiEntry(c)) { r.origin = c.origin; r.detail = describeLength(c); r.downloadUrl = c.url; }
+  return r;
 }
 function msg(e: unknown): string { return e instanceof Error ? e.message : String(e); }

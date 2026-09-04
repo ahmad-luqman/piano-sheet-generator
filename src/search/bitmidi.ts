@@ -8,6 +8,12 @@ export interface SearchResult {
   views?: number;
   alternateNames?: string[];
   source: 'bitmidi' | 'catalog';
+  /** Card tag for catalog entries that came from elsewhere ("Mutopia"); absent means built-in. */
+  origin?: string;
+  /** Short right-hand text on the card, such as "48 bars · 1:12", when there is no view count. */
+  detail?: string;
+  /** A score the source's own matcher already computed; the re-ranker uses it instead of the name. */
+  relevance?: number;
 }
 
 const BASE = 'https://bitmidi.com';
