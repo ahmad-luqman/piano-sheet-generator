@@ -2,6 +2,7 @@ import type { Arrangement, Chord, Hand, Level, LevelId, LhPattern, Note, Song } 
 import { LEVEL_META } from '../types';
 import { buildArrangement, defaultPattern, describeChanges, explainChordRuleBased, PATTERN_META, type SectionPattern } from '../arrange';
 import { parseMidi } from '../midi/parse';
+import { fingerprint, fingerprintValues } from '../arrange/difficulty';
 import { allCatalog, CATALOG, catalogById, isMidiEntry, loadCatalogEntry, loadCatalogSong, registerCatalog, searchCatalog, type CatalogEntry } from '../catalog/songs';
 import { describeLength, loadMutopiaIndex } from '../catalog/mutopia';
 import { downloadMidi, searchBitmidiAll, type SearchResult } from '../search/bitmidi';
@@ -478,7 +479,8 @@ export class App {
     const song = this.store.song(key, this.arr.title);
     const stage = this.store.stage(song, a.meta.level);
     const before = scaffoldLevel(stage);
-    const outcome = recordAttempt(stage, score, this.arr.sections, handsNeeded(this.arr, a.meta.level));
+    // The stage's fingerprint travels with the record so the skill profile can credit a clean run.
+    const outcome = recordAttempt(stage, score, this.arr.sections, handsNeeded(this.arr, a.meta.level), new Date(), fingerprintValues(fingerprint(level.notes, this.arr.bpm)));
     this.store.touch(song);
     this.lastScore = score; this.diagnosis = undefined;
     const bits = [`notes ${Math.round(score.noteAccuracy * 100)}%`, score.timingAccuracy !== undefined ? `timing ${Math.round(score.timingAccuracy * 100)}%` : '', score.wrong ? `${score.wrong} wrong` : ''].filter(Boolean).join(', ');

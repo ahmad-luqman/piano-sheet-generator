@@ -124,6 +124,28 @@ export function describeFingerprint(fp: DifficultyFingerprint): string[] {
   return out;
 }
 
+export type MetricKey = 'density' | 'ioi' | 'range' | 'stretch' | 'displacement' | 'tempo';
+/** Fixed order of the six metrics when a fingerprint is stored as a plain number list. */
+export const METRIC_KEYS: readonly MetricKey[] = ['density', 'ioi', 'range', 'stretch', 'displacement', 'tempo'];
+const UNITS: Record<MetricKey, string> = { density: 'notes/s', ioi: 's', range: 'semitones', stretch: 'semitones', displacement: 'semitones', tempo: 'bpm' };
+
+/** The raw values in METRIC_KEYS order: what the catalog index and saved progress keep. */
+export function fingerprintValues(fp: DifficultyFingerprint): number[] {
+  return METRIC_KEYS.map((k) => fp[k].value);
+}
+
+/** Rebuild a fingerprint from stored values, scoring them against the current THRESHOLDS. */
+export function fingerprintFromValues(values: number[], noteCount = 0): DifficultyFingerprint {
+  const m = Object.fromEntries(METRIC_KEYS.map((k, i) => [k, metric(values[i] ?? 0, UNITS[k], THRESHOLDS[k])])) as Record<MetricKey, Metric>;
+  const scores = METRIC_KEYS.map((k) => m[k].score);
+  return { ...m, overall: scores.reduce((s, x) => s + x, 0) / scores.length, noteCount };
+}
+
+/** 0..1 score of one raw value on one metric. */
+export function metricScore(key: MetricKey, value: number): number {
+  return metric(value, UNITS[key], THRESHOLDS[key]).score;
+}
+
 function metric(value: number, unit: string, t: { easy: number; hard: number }): Metric {
   const raw = (value - t.easy) / (t.hard - t.easy);
   return { value: round2(value), unit, score: round2(Math.min(1, Math.max(0, raw))) };

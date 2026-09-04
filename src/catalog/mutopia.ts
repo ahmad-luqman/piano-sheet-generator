@@ -1,3 +1,4 @@
+import type { LevelId } from '../types';
 import { isMidiEntry, type MidiEntry } from './songs';
 
 /**
@@ -24,6 +25,10 @@ export interface MutopiaPiece {
   notes: number;
   bars: number;
   seconds: number;
+  /** Written by scripts/fingerprint-catalog.ts: key name, suggested stage, and fingerprint values per stage. */
+  key?: string;
+  suggested?: number;
+  fp?: Record<string, number[]>;
 }
 
 export interface MutopiaIndex {
@@ -52,6 +57,7 @@ export function mutopiaEntries(index: MutopiaIndex, base = baseUrl()): MidiEntry
     url: `${base}catalog/mutopia/${p.file}`, origin: MUTOPIA_ORIGIN, licence: p.licence,
     opus: p.opus, date: p.date, style: p.style, arranger: p.arranger,
     notes: p.notes, bars: p.bars, seconds: p.seconds,
+    key: p.key, suggested: p.suggested as LevelId | undefined, fp: p.fp,
   }));
 }
 

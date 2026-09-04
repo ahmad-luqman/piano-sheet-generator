@@ -1,4 +1,4 @@
-import type { Song } from '../types';
+import type { LevelId, Song } from '../types';
 import { parseMidi, songFromNotes } from '../midi/parse';
 import { parseDsl } from './dsl';
 import { editDistance, fold, normalizeQuery, type NormalizedQuery } from '../search/normalize';
@@ -33,6 +33,10 @@ export interface MidiEntry extends CatalogBase {
   notes: number;
   bars: number;
   seconds: number;
+  key?: string;
+  /** Stage the pipeline suggests starting at, and fingerprint values per stage (difficulty.ts METRIC_KEYS order). */
+  suggested?: LevelId;
+  fp?: Record<string, number[]>;
 }
 
 export type CatalogEntry = DslEntry | MidiEntry;

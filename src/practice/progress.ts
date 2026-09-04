@@ -51,6 +51,8 @@ export interface StageProgress {
   bestCleanTempo: number;
   earned: boolean;
   fragments: Record<string, FragmentState>;
+  /** Difficulty fingerprint values (arrange/difficulty.ts METRIC_KEYS order) of this stage's notes at the song's tempo; feeds the skill profile. */
+  fingerprint?: number[];
 }
 
 export interface SongProgress {
@@ -118,8 +120,9 @@ export function songKey(arr: Arrangement, song: Song): string {
 export interface RecordOutcome { earned: boolean; justEarned: boolean; scaffoldBefore: number; scaffoldAfter: number }
 
 /** Fold one scored attempt into the stage record. */
-export function recordAttempt(stage: StageProgress, score: AttemptScore, sections: Section[], handsNeeded: Hands, now = new Date()): RecordOutcome {
+export function recordAttempt(stage: StageProgress, score: AttemptScore, sections: Section[], handsNeeded: Hands, now = new Date(), fingerprint?: number[]): RecordOutcome {
   const scaffoldBefore = scaffoldLevel(stage);
+  if (fingerprint) stage.fingerprint = fingerprint;
   const summary: AttemptSummary = {
     at: score.startedAt, mode: score.mode, hands: score.hands, tempoScale: score.tempoScale, startBar: score.startBar, endBar: score.endBar,
     noteAccuracy: score.noteAccuracy, timingAccuracy: score.timingAccuracy, wrong: score.wrong, pauses: score.pauses,
