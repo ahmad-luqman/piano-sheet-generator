@@ -13,7 +13,8 @@ small enough for a few commits. Items marked **Decision** need your call before 
 | OpenScore Lieder corpus | Voice-and-piano songs; weak fit for a keyboard beginner. Mutopia's piano set is the better build-time source. |
 | Seven fixed stages | "Hook" is a section choice (absorbed into the steps generator as "start with the most repeated section") and "Rhythm" is a reading-assist toggle, not arrangements. Folded into the three-axis model below. |
 | Generic `SearchProvider` interface up front | Only two sources exist (catalog, bitmidi). Introduce the seam when grouping needs it, not before. |
-| Arrangement lab (merge tracks from two files), personal hand constraints, ghost hand | Real ideas, but they depend on scoring and analysis that do not exist yet. Parked in Phase F. |
+| Arrangement lab (merge tracks from two files) | Nothing in A–E made it cheaper; still needs a per-track editor. Dropped 2026-09-04. Personal hand constraints and ghost hand went into Phase F. |
+| Hum or upload audio (basic-pitch in the browser) | TensorFlow.js plus a model is a multi-megabyte dependency in a build that already warns at 500 kB, and it cannot be verified headless without synthesized audio. Dropped 2026-09-04. |
 
 ## Guiding idea
 
@@ -202,26 +203,41 @@ Timing and wrong notes are ignored, so the app cannot know when a learner is rea
 Files: `src/practice/match.ts`, `src/practice/score.ts` (new), `src/practice/progress.ts`
 (new), `src/sheet/steps.ts`, `src/ui/app.ts`.
 
-## Phase F — Out of the box, after the above
+## Phase F — The learner in the loop
 
-- **Hum or upload audio** via basic-pitch in the browser (TensorFlow.js). Melody-only
-  input for Level 1; expect a model download of a few megabytes and rough polyphony.
-- **"Playable for you" search**: rank songs against the learner's scores: ready now,
-  small stretch, needs two skills.
-- **Bridge songs**: recommend a shorter piece that teaches exactly the skill the target
-  song needs.
-- **Pattern-first learning**: teach the two or three recurring chord shapes and motifs,
-  then show where they recur, using the repeat hashing already in `sections.ts`.
-- **Ghost hand**: auto-play only the notes the learner keeps missing, hand back as they
-  improve.
-- **Arrangement lab** and **personal hand constraints** (keyboard size, hand span, revoice
-  chords).
-- **LLM: next-song and bridge-song recommendations.** Given the learner's skill fingerprint
-  and catalog metadata, suggest what to play next and why. Output constrained to catalog ids.
-- **LLM: rhythm mnemonics and lyric syllables.** Words aligned to notes so the rhythm is
-  felt before it is read. Code checks the syllable count equals the note count.
-- **LLM vision: photo of sheet music as input.** A printed melody or lead sheet becomes a
-  note list, validated by the pipeline. Rough, but a genuinely new input path.
+**Status: in progress, planned 2026-09-04.** The original list was nine ideas; this is the plan,
+in dependency order. Each sub-phase is one or two commits with a headless check. Two ideas move to
+the dropped table below.
+
+1. **Learner skill profile** (`src/practice/skills.ts`). Every scored attempt stores the difficulty
+   fingerprint of what was actually played: the stage's notes at the effective tempo. The profile is,
+   per metric, the hardest value the learner has played clean, across all songs. Older saved progress
+   has no fingerprints; the profile then says "not enough played yet" and everything below falls back
+   to the plain difficulty sort. **Decision**: a clean run at 60% tempo credits density, note speed and
+   tempo at 60%, the other metrics at face value.
+2. **Catalog fingerprints** (`scripts/fingerprint-catalog.mjs`). Reads the bundled MIDI files through
+   the real six-stage pipeline (a Vite server build of the TypeScript sources, `scripts/vite.ssr.config.ts`)
+   and writes the suggested stage plus the fingerprint values of all six stages into the index. Offline;
+   no network. Values, not scores, so `THRESHOLDS` can change without a data run.
+3. **"Playable for you."** Readiness compares a piece's fingerprint at its suggested stage with the
+   profile, metric by metric: ready now; small stretch, naming the one metric; needs two skills. Badges
+   on library cards, a "for you" sort in the library, and a **bridge song** in the progress panel when the
+   current song sits beyond the profile: the shortest catalog piece that is ready on every other metric
+   and lies between the profile and the target on the missing one. Pure functions over fingerprints.
+4. **Pattern-first learning** (`src/arrange/motifs.ts`). The two or three left-hand shapes and the
+   melody's most repeated motif (interval-and-rhythm n-grams, transposition-invariant) become an early
+   how-to-play step: what the shapes are, how much of the piece they cover, which bars they recur in,
+   with a practise action on the first occurrence.
+5. **Personal hand constraints.** Keyboard size and hand span in Settings, saved next to the API key.
+   A post-pass on each stage folds notes outside the keyboard into range by octave and revoices chords
+   wider than the span, before fingering is assigned.
+6. **LLM trio**, each following the cross-cutting rules. Next-song and bridge-song recommendations
+   constrained to catalog ids, fallback the readiness sort. Rhythm mnemonics: hyphenated syllables per
+   section, rejected when the count differs from the note count. Sheet-photo input: the model writes
+   the catalog note DSL from a photo and `parseDsl` validates it; melody only, rough by design.
+7. **Ghost hand.** Learn mode only. Bar-and-hand cells below a quality threshold are auto-played; every
+   third run they are handed back and rescored; a ghosted run never counts toward promotion. If the
+   hand-back rule does not converge in one commit it goes to the dropped table with that reason.
 
 ## LLM features (cross-cutting)
 
@@ -241,16 +257,16 @@ scoring. Deterministic, tested, free, and the model is worse at them.
 | Error diagnosis | E.7 | per-bar stats, allowed actions | `StepAction` + reason | rule-based next action |
 | Session journal | E.8 | session scores | two sentences | none (omit) |
 | Query understanding | C.1 | free-text query | title/artist candidates | iTunes/MusicBrainz lookup |
-| Recommendations | F | skill fingerprint, catalog | catalog ids + reason | difficulty sort |
-| Mnemonics | F | melody notes | syllables per note | none |
-| Sheet photo input | F | image | note list | none |
+| Recommendations | F.6 | skill profile, catalog | catalog ids + reason | readiness sort |
+| Mnemonics | F.6 | melody notes | syllables per note | none |
+| Sheet photo input | F.6 | image | catalog DSL, validated | none |
 
 Cost on the user's key: about a cent or two per coaching or diagnosis call, well under
 that for the short ones. A full practice session with everything on is a few cents.
 
 ## Suggested order
 
-A → D → B → E → C → F. A, D, B, E and C are shipped; F is what remains.
+A → D → B → E → C → F. A, D, B, E and C are shipped; F is in progress.
 
 Reasoning: A and D each change what a beginner experiences on day one and need no new
 services. The fingerprint lands at the end of A so both B and D can use it. E is the largest and
