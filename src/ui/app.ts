@@ -274,7 +274,7 @@ export class App {
     }
     if (redirect) {
       this.showSuggestions(redirect.alternatives, 'Or did you mean:', { label: `“${redirect.from}” as typed`, run: () => void this.search(redirect.from, { noAssist: true }) });
-      this.showPreviewCards([redirect.via, ...redirect.alternatives]);
+      if (resultsAreWeak(groups)) this.showPreviewCards([redirect.via, ...redirect.alternatives]);
       return;
     }
     if (opts.noAssist || !resultsAreWeak(groups)) return;
@@ -307,9 +307,12 @@ export class App {
     const withPreview = candidates.filter((c) => c.preview);
     if (withPreview.length === 0) return;
     const box = $('#results');
+    // Above whatever weak MIDI hits there are: this is the card the search was really for.
+    const anchor = box.querySelector('.res-group, .res-empty, .res-sugg');
+    const insert = (el: HTMLElement) => (anchor ? box.insertBefore(el, anchor) : box.appendChild(el));
     const head = document.createElement('div'); head.className = 'res-head';
-    head.innerHTML = '<span>No MIDI file? Transcribe thirty seconds of the recording instead. Rough: the loudest line becomes the melody.</span>';
-    box.appendChild(head);
+    head.innerHTML = '<span>No good MIDI file. Transcribe thirty seconds of the recording instead; rough, the loudest line becomes the melody.</span>';
+    insert(head);
     for (const c of withPreview) {
       const row = document.createElement('div'); row.className = 'res-item';
       const art = c.preview!.artwork ? `<img class="res-art" src="${esc(c.preview!.artwork)}" alt="" />` : '';
@@ -318,8 +321,8 @@ export class App {
       const b = document.createElement('button'); b.className = 'btn small primary'; b.textContent = 'Transcribe';
       b.addEventListener('click', (e) => { e.stopPropagation(); void this.transcribePreview(c, b); });
       row.appendChild(b);
-      row.addEventListener('click', () => void this.transcribePreview(c, b));
-      box.appendChild(row);
+      row.addEventListener('click', () => { if (!b.disabled) void this.transcribePreview(c, b); });
+      insert(row);
     }
   }
 
@@ -336,7 +339,15 @@ export class App {
   }
 
   /** Shared by previews, audio files and the microphone: progress in the status line, the result loaded like any song. */
+  private transcribing = false;
+
   private async transcribe(data: ArrayBuffer, opts: { title: string; source: string; cacheKey?: string }): Promise<void> {
+    if (this.transcribing) { this.toast('Already transcribing; wait for it to finish.', true); return; }
+    this.transcribing = true;
+    try { await this.transcribeNow(data, opts); } finally { this.transcribing = false; }
+  }
+
+  private async transcribeNow(data: ArrayBuffer, opts: { title: string; source: string; cacheKey?: string }): Promise<void> {
     const status = $('#status');
     const onProgress: Progress = (phase, pct) => {
       status.textContent = phase === 'decode' ? 'Decoding audio…' : phase === 'model' ? (pct < 100 ? 'Loading the transcription model (2 MB, first time only)…' : 'Model ready.') : `Listening… ${Math.round(pct)}%`;

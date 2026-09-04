@@ -46,7 +46,8 @@ async function resultsText(page) {
   await wait(15000);
   const r = await resultsText(page);
   await page.screenshot({ path: `${SP}/c1-yesturday.png` });
-  report.push({ check: 'did-you-mean redirect', head: r.head, chips: r.chips, firstCards: r.cards.slice(0, 3), logs });
+  const previewCards = await page.evaluate(() => document.querySelectorAll('#results .tag.preview').length);
+  report.push({ check: 'did-you-mean redirect', head: r.head, chips: r.chips, firstCards: r.cards.slice(0, 3), previewCards, logs });
   // The "as typed" chip searches the original text once more, without another lookup.
   const chip = (await page.$$('#results .res-sugg button')).at(-1);
   await chip.click();

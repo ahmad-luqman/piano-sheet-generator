@@ -5,7 +5,7 @@ import puppeteer from 'puppeteer-core';
 const SP = process.argv[2] ?? '.';
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true,
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--window-size=1400,900'] });
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--window-size=1400,900'] });
 const page = await browser.newPage();
 await page.setViewport({ width: 1400, height: 900 });
 const logs = [];
@@ -56,5 +56,11 @@ if (btn) {
   };
   await page.screenshot({ path: `${SP}/g2-transcribed.png` });
 }
+// 4. Hum: Chrome's fake microphone emits a tone; the recording must decode, transcribe and load.
+await page.evaluate(() => { document.querySelector('#results').hidden = true; });
+await page.evaluate(() => void window.__app.hum());
+await wait(13000);
+for (let i = 0; i < 20; i++) { await wait(1500); const t = await page.$eval('#song-title', (e) => e.textContent); if (/Hummed/.test(t)) break; }
+report.hum = { title: await page.$eval('#song-title', (e) => e.textContent), toast: await page.$eval('#toast', (e) => e.textContent), status: await page.$eval('#status', (e) => e.textContent) };
 console.log(JSON.stringify(report, null, 1));
 await browser.close();

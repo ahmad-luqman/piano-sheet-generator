@@ -60,15 +60,18 @@ export interface TranscribeOptions { title: string; source: string; cacheKey?: s
 
 /** Audio bytes to a Song, through the cache when a key is given. */
 export async function transcribeAudio(data: ArrayBuffer, opts: TranscribeOptions): Promise<{ song: Song; notes: number; bpm: number; cached: boolean }> {
+  // The cache keeps the model's raw output so a change to TRANSCRIBE applies to cached takes too.
   const hit = opts.cacheKey ? readCache(opts.cacheKey) : undefined;
-  if (hit) return { song: notesToSong(hit.notes, hit.bpm, opts.title, opts.source), notes: hit.notes.length, bpm: hit.bpm, cached: true };
-  opts.onProgress?.('decode', 0);
-  const samples = await decodeToMono(data);
-  const notes = cleanNotes(await transcribeSamples(samples, opts.onProgress));
+  let raw: DetectedNote[];
+  if (hit) raw = hit.notes;
+  else {
+    opts.onProgress?.('decode', 0);
+    raw = await transcribeSamples(await decodeToMono(data), opts.onProgress);
+    if (opts.cacheKey) writeCache(opts.cacheKey, { notes: raw });
+  }
+  const notes = cleanNotes(raw);
   const bpm = estimateTempo(notes);
-  const song = notesToSong(notes, bpm, opts.title, opts.source);
-  if (opts.cacheKey) writeCache(opts.cacheKey, { bpm, notes });
-  return { song, notes: notes.length, bpm, cached: false };
+  return { song: notesToSong(notes, bpm, opts.title, opts.source), notes: notes.length, bpm, cached: !!hit };
 }
 
 /** Record the microphone for `seconds`; `onTick` gets the seconds left. */
@@ -91,7 +94,7 @@ export async function recordMicrophone(seconds: number, onTick?: (left: number) 
 
 const CACHE_KEY = 'psg.transcriptions.v1';
 const CACHE_MAX = 20;
-interface Cached { bpm: number; notes: DetectedNote[] }
+interface Cached { notes: DetectedNote[] }
 
 function readAll(): Record<string, Cached> {
   try { const raw = localStorage.getItem(CACHE_KEY); return raw ? (JSON.parse(raw) as Record<string, Cached>) : {}; } catch { return {}; }
