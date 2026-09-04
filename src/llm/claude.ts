@@ -7,6 +7,7 @@ import { describeVersion, recommendScore, type VersionAnalysis } from '../search
 import { barQuality } from '../practice/score';
 import type { AttemptSummary, StageProgress } from '../practice/progress';
 import type { Candidate, NextAction } from '../practice/next';
+import type { QueryCandidate } from '../search/canonical';
 
 /**
  * Every call here follows the same rules: the user's own key, opt-in; a rule-based
@@ -144,24 +145,35 @@ export function completeObjects<T>(partial: string): T[] {
   return out;
 }
 
-// ───────────────────────── search terms ─────────────────────────
+// ───────────────────────── query understanding ─────────────────────────
 
-const TERMS_SCHEMA = obj({ terms: { type: 'array', items: { type: 'string' } } });
+const QUERY_SCHEMA = obj({
+  candidates: { type: 'array', items: obj({ title: { type: 'string' }, artist: { type: 'string' }, reason: { type: 'string' } }) },
+});
 
-/** When MIDI search finds nothing, ask for alternate spellings / original titles to try. */
-export async function suggestSearchTerms(query: string): Promise<string[]> {
+/**
+ * "that sad piano song from Interstellar" → candidate titles and artists. The model does the
+ * language and the guessing; code then searches the MIDI site with each candidate and
+ * verifies there is a file. Without a key, search/canonical.ts asks iTunes instead.
+ */
+export async function understandQuery(query: string): Promise<QueryCandidate[]> {
   const c = client();
   const res = await c.messages.create({
     model: MODEL,
-    max_tokens: 1000,
-    output_config: { format: { type: 'json_schema', schema: TERMS_SCHEMA }, effort: 'low' },
-    system: 'The user is searching a MIDI-file site by song name and got no results. Suggest up to 5 alternative search strings: ' +
-      'the original-language title, the composer or artist name plus title, common misspellings fixed, or the well-known nickname of the piece.',
+    max_tokens: 800,
+    output_config: { format: { type: 'json_schema', schema: QUERY_SCHEMA }, effort: 'low' },
+    system: 'The user is looking for a song to learn on piano and typed a description, a lyric fragment, a nickname or a misspelling ' +
+      'instead of a title. Name up to 5 real songs or pieces they most likely mean, most likely first. Give the title and the artist ' +
+      'or composer exactly as commonly written in English (for classical works the common name, e.g. "Moonlight Sonata"), and a reason of ' +
+      'at most eight words. Never invent a song; if only one fits, return one.',
     messages: [{ role: 'user', content: query }],
   });
   if (res.stop_reason === 'refusal') return [];
-  const parsed = JSON.parse(textOf(res)) as { terms: string[] };
-  return parsed.terms.filter((s) => typeof s === 'string').slice(0, 5);
+  const parsed = JSON.parse(textOf(res)) as { candidates: { title: string; artist: string; reason: string }[] };
+  return parsed.candidates
+    .filter((x) => typeof x.title === 'string' && x.title.trim())
+    .slice(0, 5)
+    .map((x) => ({ title: x.title.trim(), artist: x.artist?.trim() || undefined, reason: x.reason?.trim() || undefined, source: 'claude' as const }));
 }
 
 // ───────────────────────── accompaniment taste (stage 5) ─────────────────────────

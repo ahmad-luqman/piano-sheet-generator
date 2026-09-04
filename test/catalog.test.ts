@@ -30,6 +30,11 @@ describe('catalog lookup', () => {
     expect(ids('bohemian rhapsody')).toEqual([]);
     expect(ids('let it be')).toEqual([]);
   });
+  it('needs every meaningful word, with one miss allowed on long queries', () => {
+    expect(ids('moonlight sonata')).toEqual([]);
+    expect(ids('minuet sonata')).toEqual([]);
+    expect(ids('twinkle twinkle little star song')[0]).toBe('twinkle');
+  });
   it('edit distance counts a transposition as one', () => {
     expect(editDistance('twinkle', 'twinkel')).toBe(1);
     expect(editDistance('elise', 'elise')).toBe(0);

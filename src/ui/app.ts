@@ -25,7 +25,9 @@ import { barQuality } from '../practice/score';
 import { dailySet, ProgressStore, recordAttempt, scaffoldLevel, songKey, type SongProgress, type StageProgress } from '../practice/progress';
 import { handsNeeded, nextAction, type NextAction } from '../practice/next';
 import { ProgressPanel } from './progress';
-import { chooseAccompaniment, diagnoseErrors, enrichSteps, explainChord, explainVersions, getApiKey, setApiKey, suggestSearchTerms, writeJournal } from '../llm/claude';
+import { chooseAccompaniment, diagnoseErrors, enrichSteps, explainChord, explainVersions, getApiKey, setApiKey, understandQuery, writeJournal } from '../llm/claude';
+import { candidateQuery, lookupCanonical, sameAsQuery, SOURCE_LABEL, type QueryCandidate } from '../search/canonical';
+import { looksLikeProse, resultsAreWeak } from '../search/intent';
 
 const $ = <T extends HTMLElement>(sel: string): T => {
   const el = document.querySelector<T>(sel);
@@ -206,25 +208,59 @@ export class App {
 
   // ───────────────────────── song loading ─────────────────────────
 
-  private async search(query: string): Promise<void> {
+  /**
+   * Catalog first, then bitmidi. When the results are weak, a "did you mean" lookup runs:
+   * Claude when a key is set and the query reads as a description, otherwise iTunes then
+   * MusicBrainz. No result at all and a confident candidate means one automatic hop to
+   * searching that candidate instead; the other candidates become chips. A redirected
+   * search never redirects again.
+   */
+  private async search(query: string, redirect?: { from: string; via: QueryCandidate; alternatives: QueryCandidate[] }): Promise<void> {
     const q = query.trim();
     if (!q) return;
     this.searchAbort?.abort();
     const ac = new AbortController(); this.searchAbort = ac;
+    const note = redirect ? `${SOURCE_LABEL[redirect.via.source]} read “${redirect.from}” as this` : undefined;
     const local = searchCatalog(q).slice(0, MAX_CATALOG_HITS).map(({ entry, score }) => catalogResult(entry, score));
-    this.showResults(searchGroups(local, q), q, false, 'Searching bitmidi.com…');
+    this.showResults(searchGroups(local, q), q, false, [note, 'Searching bitmidi.com…'].filter(Boolean).join(' · '));
+    // Ask Claude while bitmidi is searching; both answers are wanted for a description.
+    const askClaude = !redirect && !!getApiKey() && looksLikeProse(q);
+    const understood = askClaude ? understandQuery(q) : null;
+    understood?.catch(() => { /* reported below */ });
+
+    let groups: SongGroup[];
     try {
       const remote = await searchBitmidiAll(q, ac.signal);
       if (ac.signal.aborted) return;
-      this.showResults(searchGroups([...local, ...remote], q), q, true);
-      if (remote.length === 0 && local.length === 0 && getApiKey()) {
-        const sugg = await suggestSearchTerms(q).catch(() => []);
-        if (sugg.length) this.showSuggestions(sugg);
-      }
+      groups = searchGroups([...local, ...remote], q);
+      this.showResults(groups, q, true, note);
     } catch (err) {
       if (ac.signal.aborted) return;
-      this.showResults(searchGroups(local, q), q, true, `Internet search failed (${msg(err)}). Built-in matches shown.`);
+      groups = searchGroups(local, q);
+      this.showResults(groups, q, true, [note, `Internet search failed (${msg(err)}). Built-in matches shown.`].filter(Boolean).join(' · '));
     }
+    if (redirect) {
+      this.showSuggestions(redirect.alternatives, 'Or did you mean:', { label: `“${redirect.from}” as typed`, run: () => void this.search(redirect.from, { from: redirect.from, via: redirect.via, alternatives: [] }) });
+      return;
+    }
+    if (!resultsAreWeak(groups)) return;
+
+    let candidates: QueryCandidate[];
+    try { candidates = await (understood ?? lookupCanonical(q, ac.signal)); }
+    catch (err) {
+      if (ac.signal.aborted) return;
+      this.showAssistNote(`Could not look up the title (${msg(err)}).`);
+      return;
+    }
+    if (ac.signal.aborted) return;
+    candidates = candidates.filter((c) => !sameAsQuery(c, q));
+    if (candidates.length === 0) return;
+    if (groups.length === 0) {
+      const [via, ...alternatives] = candidates;
+      await this.search(candidateQuery(via), { from: q, via, alternatives });
+      return;
+    }
+    this.showSuggestions(candidates, `${SOURCE_LABEL[candidates[0].source]} suggests:`);
   }
 
   /** One card per song; uploads of the same title sit behind a "N versions" toggle. */
@@ -275,12 +311,27 @@ export class App {
     catch (err) { this.toast(`Could not ask Claude: ${msg(err)}`, true); return new Map(); }
   }
 
-  private showSuggestions(terms: string[]): void {
+  /** "Did you mean" chips under the results; each runs a fresh search for that candidate. */
+  private showSuggestions(candidates: QueryCandidate[], label: string, extra?: { label: string; run: () => void }): void {
+    if (candidates.length === 0 && !extra) return;
     const box = $('#results');
     const wrap = document.createElement('div'); wrap.className = 'res-sugg';
-    wrap.innerHTML = '<span class="muted small">Claude suggests trying:</span>';
-    for (const t of terms) { const b = document.createElement('button'); b.className = 'btn small'; b.textContent = t; b.addEventListener('click', () => { $<HTMLInputElement>('#search-input').value = t; void this.search(t); }); wrap.appendChild(b); }
+    const head = document.createElement('span'); head.className = 'muted small'; head.textContent = label; wrap.appendChild(head);
+    for (const c of candidates) {
+      const t = candidateQuery(c);
+      const b = document.createElement('button'); b.className = 'btn small'; b.textContent = t;
+      if (c.reason) b.title = c.reason;
+      b.addEventListener('click', () => { $<HTMLInputElement>('#search-input').value = t; void this.search(t); });
+      wrap.appendChild(b);
+    }
+    if (extra) { const b = document.createElement('button'); b.className = 'btn small'; b.textContent = extra.label; b.addEventListener('click', extra.run); wrap.appendChild(b); }
     box.appendChild(wrap);
+  }
+
+  private showAssistNote(text: string): void {
+    const wrap = document.createElement('div'); wrap.className = 'res-sugg';
+    const head = document.createElement('span'); head.className = 'muted small'; head.textContent = text; wrap.appendChild(head);
+    $('#results').appendChild(wrap);
   }
 
   private async pick(r: SearchResult): Promise<void> {

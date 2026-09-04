@@ -1,7 +1,7 @@
 import type { Song } from '../types';
 import { parseMidi, songFromNotes } from '../midi/parse';
 import { parseDsl } from './dsl';
-import { fold, normalizeQuery, type NormalizedQuery } from '../search/normalize';
+import { editDistance, fold, normalizeQuery, type NormalizedQuery } from '../search/normalize';
 
 export interface CatalogBase {
   id: string;
@@ -153,8 +153,10 @@ export function catalogScore(entry: CatalogEntry, q: NormalizedQuery): number {
   if (` ${composer} `.includes(` ${q.folded} `)) best = Math.max(best, 2);
   const hits = qTokens.filter((t) => haystack.some((h) => tokenMatches(t, h))).length;
   const coverage = hits / qTokens.length;
-  // At least half the meaningful words must land somewhere, or it is not this song.
-  if (coverage < 0.5) return 0;
+  // Every meaningful word must land somewhere, or it is not this song: with a few hundred
+  // Mutopia pieces, "moonlight sonata" would otherwise surface twenty sonatas above the real
+  // uploads. Long queries get one miss ("twinkle twinkle little star song").
+  if (coverage < (qTokens.length >= 4 ? 0.75 : 1)) return 0;
   return best + coverage;
 }
 
@@ -166,17 +168,4 @@ function tokenMatches(q: string, h: string): boolean {
   return false;
 }
 
-/** Optimal string alignment distance (Levenshtein plus adjacent transposition). */
-export function editDistance(a: string, b: string): number {
-  const m = a.length, n = b.length;
-  const d: number[][] = Array.from({ length: m + 1 }, (_, i) => [i, ...new Array<number>(n).fill(0)]);
-  for (let j = 0; j <= n; j++) d[0][j] = j;
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
-      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
-    }
-  }
-  return d[m][n];
-}
+export { editDistance };
