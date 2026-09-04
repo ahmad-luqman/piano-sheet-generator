@@ -32,6 +32,7 @@ h1, h2 { margin: 0; font-weight: 650; }
 
 .results { position: absolute; top: 58px; left: 14px; right: 14px; z-index: 20; max-height: 60vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 20px 50px rgba(0,0,0,0.5); padding: 8px; }
 .results .res-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; color: var(--muted); font-size: 12px; }
+.results .res-actions { display: flex; gap: 6px; align-items: center; }
 .results .res-item { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
 .results .res-item:hover { background: var(--panel-2); }
 .results .res-item .name { flex: 1; }

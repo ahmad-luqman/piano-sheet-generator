@@ -8,6 +8,11 @@ import { barQuality } from '../practice/score';
 import type { AttemptSummary, StageProgress } from '../practice/progress';
 import type { Candidate, NextAction } from '../practice/next';
 import type { QueryCandidate } from '../search/canonical';
+import type { SkillProfile } from '../practice/skills';
+import { METRIC_WORDS } from '../practice/skills';
+import { METRIC_KEYS } from '../arrange/difficulty';
+import { songFromTranscription, validMnemonics, validPicks, type Mnemonic, type MnemonicRequest, type Pick, type SheetTranscription } from './validate';
+import type { Song } from '../types';
 
 /**
  * Every call here follows the same rules: the user's own key, opt-in; a rule-based
@@ -335,4 +340,89 @@ export async function writeJournal(arr: Arrangement, levelId: LevelId, attempts:
   });
   checkRefusal(res);
   return textOf(res).trim();
+}
+
+// ───────────────────────── what to play next (Phase F) ─────────────────────────
+
+const PICKS_SCHEMA = obj({ picks: { type: 'array', items: obj({ id: { type: 'string' }, reason: { type: 'string' } }) } });
+
+export interface RecommendCandidate { id: string; title: string; composer: string; bars: number; fit: string; suggested: number }
+
+/**
+ * Three pieces to play next, chosen from a shortlist code already judged playable or a
+ * small stretch. The model adds taste and a reason; ids off the list are dropped, and an
+ * empty answer means the caller keeps the readiness order.
+ */
+export async function recommendSongs(profile: SkillProfile, recent: { title: string; stage: number; clean: boolean }[], shortlist: RecommendCandidate[]): Promise<Pick[]> {
+  const c = client();
+  const skills = profile.values ? METRIC_KEYS.map((k, i) => `${k}: ${profile.values![i]}`).join(', ') : 'nothing credited yet';
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 500,
+    output_config: { format: { type: 'json_schema', schema: PICKS_SCHEMA }, effort: 'low' },
+    system: 'You are a piano teacher choosing the next piece for a self-taught beginner. Pick up to 3 from the shortlist only, by id, most suitable first. ' +
+      'Prefer variety over what they just played, a piece that builds on a small stretch over one that is merely easy, and something short. ' +
+      'Give a reason of at most 15 words that a learner would find motivating. Never invent an id.',
+    messages: [{ role: 'user', content: JSON.stringify({ skillsPlayedClean: skills, recentlyPlayed: recent, shortlist }) }],
+  });
+  checkRefusal(res);
+  return validPicks(JSON.parse(textOf(res)), new Set(shortlist.map((s) => s.id)));
+}
+
+// ───────────────────────── rhythm mnemonics (Phase F) ─────────────────────────
+
+const WORDS_SCHEMA = obj({ sections: { type: 'array', items: obj({ section: { type: 'integer' }, words: { type: 'string' } }) } });
+
+/**
+ * Words to say while playing each right-hand section, one syllable per note, hyphenated.
+ * Code counts the syllables and drops any section where the count is wrong.
+ */
+export async function rhythmWords(arr: Arrangement, sections: (MnemonicRequest & { label: string; bars: string; letters: string; rhythm: string })[]): Promise<Mnemonic[]> {
+  const c = client();
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 800,
+    output_config: { format: { type: 'json_schema', schema: WORDS_SCHEMA }, effort: 'low' },
+    system: systemBlocks(arr,
+      'Write a short phrase to say aloud while playing each section so the rhythm is felt before it is read. Exactly one syllable per note, ' +
+      'in order, with every multi-syllable word hyphenated (twin-kle). Long notes get a stressed or open syllable, short notes a light one. ' +
+      'Plain, friendly words; a lyric from the actual song is best when one exists. Return the section index and the words.'),
+    messages: [{ role: 'user', content: JSON.stringify({ sections }) }],
+  });
+  checkRefusal(res);
+  return validMnemonics(JSON.parse(textOf(res)), sections);
+}
+
+// ───────────────────────── sheet photo (Phase F) ─────────────────────────
+
+const SHEET_SCHEMA = obj({
+  title: { type: 'string' }, bpm: { type: 'integer' }, timeSig: obj({ num: { type: 'integer' }, den: { type: 'integer' } }),
+  rh: { type: 'string' }, lh: { type: 'string' }, notes: { type: 'string' },
+});
+
+const DSL_HELP = 'Note DSL, whitespace separated: C4 (one beat), G4:2 (two beats), F#5:0.5 (half a beat), Bb3:1.5, r:1 (rest), [C3 E3 G3]:2 (chord), | (bar line, optional). ' +
+  'Middle C is C4. Beats are quarter notes. Write the melody line (top staff, right hand) as `rh`. Write the bass staff as `lh` only if it is clearly readable, else leave it empty. ' +
+  'Put any doubt (a blurry bar, a guessed key signature) in `notes`.';
+
+/**
+ * A photo of printed sheet music becomes a melody. The model writes the catalog DSL and
+ * parseDsl validates every token; anything it cannot parse rejects the whole answer.
+ * Rough by design: a lead sheet or a simple melody, not a full score.
+ */
+export async function readSheetPhoto(file: { data: string; mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' }): Promise<{ song: Song; notes?: string }> {
+  const c = client();
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 3000,
+    output_config: { format: { type: 'json_schema', schema: SHEET_SCHEMA }, effort: 'medium' },
+    system: 'Transcribe the sheet music in the photo. ' + DSL_HELP + ' Use the printed tempo if there is one, else a sensible one for the style. Never invent bars you cannot see.',
+    messages: [{ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: file.mediaType, data: file.data } },
+      { type: 'text', text: 'Transcribe this.' },
+    ] }],
+  });
+  checkRefusal(res);
+  const parsed = JSON.parse(textOf(res)) as SheetTranscription;
+  const song = songFromTranscription(parsed);
+  return { song, notes: parsed.notes?.trim() || undefined };
 }

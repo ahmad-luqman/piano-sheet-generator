@@ -30,7 +30,7 @@ import { barQuality } from '../practice/score';
 import { dailySet, ProgressStore, recordAttempt, scaffoldLevel, songKey, type SongProgress, type StageProgress } from '../practice/progress';
 import { handsNeeded, nextAction, type NextAction } from '../practice/next';
 import { ProgressPanel } from './progress';
-import { chooseAccompaniment, diagnoseErrors, enrichSteps, explainChord, explainVersions, getApiKey, setApiKey, understandQuery, writeJournal } from '../llm/claude';
+import { chooseAccompaniment, diagnoseErrors, enrichSteps, explainChord, explainVersions, getApiKey, readSheetPhoto, recommendSongs, rhythmWords, setApiKey, understandQuery, writeJournal, type RecommendCandidate } from '../llm/claude';
 import { candidateQuery, lookupCanonical, sameAsQuery, SOURCE_LABEL, type QueryCandidate } from '../search/canonical';
 import { looksLikeProse, resultsAreWeak } from '../search/intent';
 
@@ -209,6 +209,8 @@ export class App {
     $<HTMLInputElement>('#opt-countin').addEventListener('change', (e) => { this.player.countInBeats = (e.target as HTMLInputElement).checked ? (this.arr?.beatsPerBar ?? 4) : 0; });
     $<HTMLInputElement>('#volume').addEventListener('input', (e) => this.audio.setVolumeDb(parseInt((e.target as HTMLInputElement).value, 10)));
     $('#btn-enrich').addEventListener('click', () => void this.coach());
+    $('#btn-words').addEventListener('click', () => void this.words());
+    $<HTMLInputElement>('#photo-input').addEventListener('change', (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) void this.photo(f); (e.target as HTMLInputElement).value = ''; });
 
     $<HTMLSelectElement>('#melody-track').addEventListener('change', (e) => {
       if (!this.song) return;
@@ -286,14 +288,16 @@ export class App {
   }
 
   /** One card per song; uploads of the same title sit behind a "N versions" toggle. */
-  private showResults(groups: SongGroup[], q: string, done: boolean, note?: string): void {
+  private showResults(groups: SongGroup[], q: string, done: boolean, note?: string, actions: HTMLElement[] = []): void {
     const box = $('#results');
     box.innerHTML = '';
     const files = groups.reduce((n, g) => n + g.versions.length, 0);
     const head = document.createElement('div'); head.className = 'res-head';
     const count = groups.length === files ? `${groups.length} result${groups.length === 1 ? '' : 's'}` : `${groups.length} song${groups.length === 1 ? '' : 's'}, ${files} files`;
-    head.innerHTML = `<span>${count}${q ? ` for “${esc(q)}”` : ''}${note ? ` · ${esc(note)}` : ''}</span><button class="btn small">Close</button>`;
-    head.querySelector('button')!.addEventListener('click', () => { box.hidden = true; });
+    head.innerHTML = `<span>${count}${q ? ` for “${esc(q)}”` : ''}${note ? ` · ${esc(note)}` : ''}</span><span class="res-actions"></span>`;
+    const close = document.createElement('button'); close.className = 'btn small'; close.textContent = 'Close';
+    close.addEventListener('click', () => { box.hidden = true; });
+    head.querySelector('.res-actions')!.append(...actions, close);
     box.appendChild(head);
     if (groups.length === 0 && done) { const e = document.createElement('div'); e.className = 'res-empty'; e.textContent = 'Nothing found. Try the original title, the composer, or fewer words.'; box.appendChild(e); }
     this.cards = groups.map((g) => new GroupCard(g, this.groupHandlers));
@@ -470,7 +474,82 @@ export class App {
     const results = fits.map((f) => catalogResult(f.entry, undefined, f));
     const ready = fits.filter((f) => f.fit.kind === 'ready').length;
     const note = profile.values ? `sorted for you: ${ready} ready now, then small stretches` : 'sorted easiest first; play something clean in Rhythm or Perform mode to sort for you';
-    this.showResults(searchGroups(results, ''), '', true, note);
+    const actions: HTMLElement[] = [];
+    if (profile.values && getApiKey()) {
+      const b = document.createElement('button'); b.className = 'btn small'; b.textContent = '✨ What next?';
+      b.addEventListener('click', () => void this.recommend(fits, b));
+      actions.push(b);
+    }
+    this.showResults(searchGroups(results, ''), '', true, note, actions);
+  }
+
+  /** Claude picks three from the shortlist code already judged ready or a small stretch; the list order is the fallback. */
+  private async recommend(fits: CatalogFit[], button: HTMLButtonElement): Promise<void> {
+    button.disabled = true; button.textContent = '✨ Thinking…';
+    try {
+      const shortlist: RecommendCandidate[] = fits
+        .filter((f) => f.fit.kind === 'ready' || f.fit.kind === 'stretch' || (f.fit.kind === 'needs' && f.fit.gaps.length === 1))
+        .slice(0, 25)
+        .map((f) => ({ id: f.entry.id, title: f.entry.title, composer: f.entry.composer, bars: isMidiEntry(f.entry) ? f.entry.bars : 16, fit: `${f.fit.label}: ${f.fit.detail}`, suggested: f.suggested }));
+      const recent = Object.values(this.store.load()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5)
+        .map((s) => { const stages = Object.entries(s.stages); const [id, st] = stages[stages.length - 1] ?? ['1', undefined]; return { title: s.title, stage: parseInt(id, 10), clean: !!st?.cleanRuns }; });
+      const picks = await recommendSongs(this.profile(), recent, shortlist);
+      if (picks.length === 0) { this.toast('Claude had no pick beyond the order shown.'); return; }
+      const box = $('#results');
+      const wrap = document.createElement('div'); wrap.className = 'res-sugg';
+      const head = document.createElement('span'); head.className = 'muted small'; head.textContent = 'Claude suggests:'; wrap.appendChild(head);
+      for (const p of picks) {
+        const f = fits.find((x) => x.entry.id === p.id)!;
+        const b = document.createElement('button'); b.className = 'btn small'; b.textContent = `${f.entry.title} — ${f.entry.composer}`; b.title = p.reason;
+        b.addEventListener('click', () => this.openCatalog(p.id));
+        wrap.appendChild(b);
+        if (p.reason) { const r = document.createElement('span'); r.className = 'muted small'; r.textContent = p.reason; wrap.appendChild(r); }
+      }
+      box.insertBefore(wrap, box.children[1] ?? null);
+    } catch (err) { this.toast(`Could not ask Claude: ${msg(err)}`, true); }
+    finally { button.disabled = false; button.textContent = '✨ What next?'; }
+  }
+
+  /** Words to say while playing each right-hand section; code checks one syllable per note before showing them. */
+  private async words(): Promise<void> {
+    if (!this.arr || !this.level) return;
+    if (!getApiKey()) { this.toast('Add your Anthropic API key in Settings (⚙) to get rhythm words.', true); $<HTMLDialogElement>('#dlg-settings').showModal(); return; }
+    const btn = $<HTMLButtonElement>('#btn-words');
+    btn.disabled = true; btn.textContent = '✨ Thinking…';
+    try {
+      const bpb = this.arr.beatsPerBar;
+      const requests = this.arr.sections.filter((s) => s.repeatOf === undefined).map((s) => {
+        const rh = this.level!.notes.filter((n) => n.hand === 'rh' && n.startBeat >= s.startBar * bpb && n.startBeat < (s.endBar + 1) * bpb);
+        const onsets: { letter: string; dur: number }[] = [];
+        let lastStart = -1;
+        for (const n of rh) { if (Math.abs(n.startBeat - lastStart) < 0.01) continue; lastStart = n.startBeat; onsets.push({ letter: n.letter, dur: n.durationBeats }); }
+        return { section: s.index, label: s.label, bars: `${s.startBar + 1}-${s.endBar + 1}`, noteCount: onsets.length, letters: onsets.map((o) => o.letter).join(' '), rhythm: onsets.map((o) => o.dur).join(' ') };
+      }).filter((r) => r.noteCount >= 2 && r.noteCount <= 40);
+      const got = await rhythmWords(this.arr, requests);
+      if (got.length === 0) { this.toast('Claude’s words did not fit the notes, so none were kept.', true); return; }
+      for (const m of got) {
+        const sec = this.arr.sections[m.section];
+        for (const st of this.steps) if (st.action?.hands === 'rh' && st.action.startBar === sec.startBar && st.action.endBar === sec.endBar) st.body += ` Say it as you play: “${m.words}”.`;
+      }
+      this.paintSteps();
+      this.toast(`Words added for ${got.length} of ${requests.length} sections.`);
+    } catch (err) { this.toast(`Could not ask Claude: ${msg(err)}`, true); }
+    finally { btn.disabled = false; btn.textContent = '✨ Words'; }
+  }
+
+  /** A photo of sheet music: Claude writes the note DSL, parseDsl validates it, and the result loads like any song. */
+  private async photo(file: File): Promise<void> {
+    if (!getApiKey()) { this.toast('Add your Anthropic API key in Settings (⚙) to read sheet music from a photo.', true); $<HTMLDialogElement>('#dlg-settings').showModal(); return; }
+    const type = file.type as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(type)) { this.toast('Use a JPEG, PNG, GIF or WebP photo.', true); return; }
+    if (file.size > 5 * 1024 * 1024) { this.toast('That photo is over 5 MB; a phone-sized JPEG works best.', true); return; }
+    this.toast('Reading the sheet music… this takes a few seconds.');
+    try {
+      const data = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1] ?? ''); r.onerror = () => reject(r.error); r.readAsDataURL(file); });
+      const { song, notes } = await readSheetPhoto({ data, mediaType: type });
+      this.loadSong(song);
+      if (notes) this.toast(`Read from the photo. Claude notes: ${notes}`);
+    } catch (err) { this.toast(`Could not read the photo: ${msg(err)}`, true); }
   }
 
   /** Readiness of the current stage and a bridge song, for the progress panel. */

@@ -17,6 +17,7 @@
       <div class="top-actions">
         <button id="btn-catalog" class="btn" title="Bundled pieces: hand-entered songs and public-domain piano works from Mutopia">Library</button>
         <label class="btn" title="Open a .mid file from your computer">Upload .mid<input id="file-input" type="file" accept=".mid,.midi,audio/midi" hidden /></label>
+        <label class="btn" title="Photograph printed sheet music; Claude reads the melody (needs an API key in Settings)">✨ Sheet photo<input id="photo-input" type="file" accept="image/*" hidden /></label>
         <button id="btn-url" class="btn" title="Load a MIDI file from a URL">MIDI URL</button>
         <button id="btn-settings" class="btn icon" title="Settings" aria-label="Settings">⚙</button>
       </div>
@@ -86,6 +87,7 @@
         <div class="side-head">
           <h2>How to play</h2>
           <button id="btn-enrich" class="btn small" title="Rewrite the steps with Claude (needs an API key in Settings)">✨ Coach me</button>
+          <button id="btn-words" class="btn small" title="Words to say while playing each section, one syllable per note (needs an API key in Settings)">✨ Words</button>
         </div>
         <div id="progress" class="progress"></div>
         <ol id="steps" class="steps"></ol>
