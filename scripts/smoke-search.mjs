@@ -47,6 +47,12 @@ async function resultsText(page) {
   const r = await resultsText(page);
   await page.screenshot({ path: `${SP}/c1-yesturday.png` });
   report.push({ check: 'did-you-mean redirect', head: r.head, chips: r.chips, firstCards: r.cards.slice(0, 3), logs });
+  // The "as typed" chip searches the original text once more, without another lookup.
+  const chip = (await page.$$('#results .res-sugg button')).at(-1);
+  await chip.click();
+  await wait(8000);
+  const back = await resultsText(page);
+  report.push({ check: 'as-typed chip', head: back.head, chips: back.chips, empty: back.empty, logs });
   await page.close();
 }
 // 2. A catalog search that lands on Mutopia, then load it.

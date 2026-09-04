@@ -50,7 +50,8 @@ export function rankCandidates(raw: QueryCandidate[], query: string): QueryCandi
   const scored: { c: QueryCandidate; n: number; len: number }[] = [];
   for (const c of raw) {
     if (!c.title.trim()) continue;
-    const key = `${fold(c.title)}|${fold(c.artist ?? '')}`;
+    // One chip per title: each only feeds a MIDI-site search, where the artist is a hint at most.
+    const key = fold(c.title);
     if (seen.has(key)) continue;
     seen.add(key);
     scored.push({ c, n: overlap(query, c), len: tokensOf(`${c.title} ${c.artist ?? ''}`).length });

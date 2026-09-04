@@ -35,6 +35,11 @@ describe('catalog lookup', () => {
     expect(ids('minuet sonata')).toEqual([]);
     expect(ids('twinkle twinkle little star song')[0]).toBe('twinkle');
   });
+  it('still matches when the query contains the whole title plus filler', () => {
+    expect(ids('happy birthday song')[0]).toBe('happy-birthday');
+    expect(ids('jingle bells christmas')[0]).toBe('jingle-bells');
+    expect(ids('beethoven sonata moonlight')).toEqual([]);
+  });
   it('edit distance counts a transposition as one', () => {
     expect(editDistance('twinkle', 'twinkel')).toBe(1);
     expect(editDistance('elise', 'elise')).toBe(0);

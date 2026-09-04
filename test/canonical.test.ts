@@ -26,6 +26,13 @@ describe('canonical lookup: iTunes', () => {
     expect(ranked.map((c) => c.title)).toEqual(['Interstellar', 'Interstellar Main Theme', 'Another Sad Love Song']);
     expect(ranked[0].artist).toBe('Random Piano');
   });
+  it('offers each title once', () => {
+    const raw: QueryCandidate[] = [
+      { title: 'Interstellar', artist: 'Anna Lapwood', source: 'itunes' },
+      { title: 'Interstellar', artist: 'Random Piano', source: 'itunes' },
+    ];
+    expect(rankCandidates(raw, 'interstellar piano')).toEqual([{ title: 'Interstellar', artist: 'Anna Lapwood', source: 'itunes' }]);
+  });
   it('cleans remaster and bracket noise from track names', () => {
     expect(cleanTrackTitle('Yesterday (Remastered 2009)')).toBe('Yesterday');
     expect(cleanTrackTitle('Let It Be - Single Version')).toBe('Let It Be');

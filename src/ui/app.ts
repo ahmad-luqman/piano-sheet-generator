@@ -215,16 +215,17 @@ export class App {
    * searching that candidate instead; the other candidates become chips. A redirected
    * search never redirects again.
    */
-  private async search(query: string, redirect?: { from: string; via: QueryCandidate; alternatives: QueryCandidate[] }): Promise<void> {
+  private async search(query: string, opts: { redirect?: { from: string; via: QueryCandidate; alternatives: QueryCandidate[] }; noAssist?: boolean } = {}): Promise<void> {
     const q = query.trim();
     if (!q) return;
     this.searchAbort?.abort();
     const ac = new AbortController(); this.searchAbort = ac;
+    const { redirect } = opts;
     const note = redirect ? `${SOURCE_LABEL[redirect.via.source]} read “${redirect.from}” as this` : undefined;
     const local = searchCatalog(q).slice(0, MAX_CATALOG_HITS).map(({ entry, score }) => catalogResult(entry, score));
     this.showResults(searchGroups(local, q), q, false, [note, 'Searching bitmidi.com…'].filter(Boolean).join(' · '));
     // Ask Claude while bitmidi is searching; both answers are wanted for a description.
-    const askClaude = !redirect && !!getApiKey() && looksLikeProse(q);
+    const askClaude = !redirect && !opts.noAssist && !!getApiKey() && looksLikeProse(q);
     const understood = askClaude ? understandQuery(q) : null;
     understood?.catch(() => { /* reported below */ });
 
@@ -240,24 +241,28 @@ export class App {
       this.showResults(groups, q, true, [note, `Internet search failed (${msg(err)}). Built-in matches shown.`].filter(Boolean).join(' · '));
     }
     if (redirect) {
-      this.showSuggestions(redirect.alternatives, 'Or did you mean:', { label: `“${redirect.from}” as typed`, run: () => void this.search(redirect.from, { from: redirect.from, via: redirect.via, alternatives: [] }) });
+      this.showSuggestions(redirect.alternatives, 'Or did you mean:', { label: `“${redirect.from}” as typed`, run: () => void this.search(redirect.from, { noAssist: true }) });
       return;
     }
-    if (!resultsAreWeak(groups)) return;
+    if (opts.noAssist || !resultsAreWeak(groups)) return;
 
-    let candidates: QueryCandidate[];
-    try { candidates = await (understood ?? lookupCanonical(q, ac.signal)); }
-    catch (err) {
-      if (ac.signal.aborted) return;
-      this.showAssistNote(`Could not look up the title (${msg(err)}).`);
-      return;
+    // Claude first when it was asked, then iTunes and MusicBrainz; only the whole chain failing is reported.
+    let candidates: QueryCandidate[] = [];
+    let failure: unknown;
+    if (understood) {
+      try { candidates = await understood; } catch (err) { failure = err; }
+    }
+    if (candidates.length === 0) {
+      try { candidates = await lookupCanonical(q, ac.signal); failure = undefined; }
+      catch (err) { failure = failure ?? err; }
     }
     if (ac.signal.aborted) return;
+    if (failure) { this.showAssistNote(`Could not look up the title (${msg(failure)}).`); return; }
     candidates = candidates.filter((c) => !sameAsQuery(c, q));
     if (candidates.length === 0) return;
     if (groups.length === 0) {
       const [via, ...alternatives] = candidates;
-      await this.search(candidateQuery(via), { from: q, via, alternatives });
+      await this.search(candidateQuery(via), { redirect: { from: q, via, alternatives } });
       return;
     }
     this.showSuggestions(candidates, `${SOURCE_LABEL[candidates[0].source]} suggests:`);

@@ -97,7 +97,8 @@ export async function loadCatalogEntry(entry: CatalogEntry, signal?: AbortSignal
   if (!isMidiEntry(entry)) return loadCatalogSong(entry);
   const res = await fetch(entry.url, { signal });
   if (!res.ok) throw new Error(`Could not load the bundled file (HTTP ${res.status})`);
-  return parseMidi(await res.arrayBuffer(), entry.title, 'catalog');
+  // The composer goes in the title: Mutopia has many a "Prélude", and the song bar and saved progress both key on it.
+  return parseMidi(await res.arrayBuffer(), `${entry.title} — ${entry.composer}`, 'catalog');
 }
 
 // ───────────────────────── registry ─────────────────────────
@@ -146,9 +147,12 @@ export function catalogScore(entry: CatalogEntry, q: NormalizedQuery): number {
   const haystack = [...names, composer, entry.id.replace(/-/g, ' ')].join(' ').split(' ').filter(Boolean);
   const qTokens = q.significant;
   let best = 0;
+  const padded = ` ${q.folded} `;
   for (const name of names) {
     if (name === q.folded) best = Math.max(best, 3);
-    else if (` ${name} `.includes(` ${q.folded} `)) best = Math.max(best, 2);
+    else if (` ${name} `.includes(padded)) best = Math.max(best, 2);
+    // "happy birthday song" contains the whole title; one-word titles ("Prélude") do not count.
+    else if (name.includes(' ') && padded.includes(` ${name} `)) best = Math.max(best, 2);
   }
   if (` ${composer} `.includes(` ${q.folded} `)) best = Math.max(best, 2);
   const hits = qTokens.filter((t) => haystack.some((h) => tokenMatches(t, h))).length;
@@ -156,7 +160,7 @@ export function catalogScore(entry: CatalogEntry, q: NormalizedQuery): number {
   // Every meaningful word must land somewhere, or it is not this song: with a few hundred
   // Mutopia pieces, "moonlight sonata" would otherwise surface twenty sonatas above the real
   // uploads. Long queries get one miss ("twinkle twinkle little star song").
-  if (coverage < (qTokens.length >= 4 ? 0.75 : 1)) return 0;
+  if (best < 2 && coverage < (qTokens.length >= 4 ? 0.75 : 1)) return 0;
   return best + coverage;
 }
 
