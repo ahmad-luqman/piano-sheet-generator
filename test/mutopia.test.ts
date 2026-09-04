@@ -1,19 +1,19 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseComposer, parseTable, slugFromUrl } from '../scripts/mutopia-table.mjs';
 import { describeLength, mutopiaEntries, type MutopiaIndex } from '../src/catalog/mutopia';
 import { allCatalog, CATALOG, findCatalog, isMidiEntry, registerCatalog, searchCatalog } from '../src/catalog/songs';
 import { rankResults } from '../src/search/rank';
 
-const html = readFileSync(new URL('./fixtures/mutopia-table.html', import.meta.url), 'utf8');
+import html from './fixtures/mutopia-table.html?raw';
 
 describe('ingest: Mutopia result table', () => {
   const rows = parseTable(html);
   it('reads one record per result table', () => {
-    expect(rows.map((r: any) => r.title)).toEqual(['Vocalise № 1', 'Giselle - Pas de deux (1er Acte)', 'Rumores de la Caleta']);
+    expect(rows.map((r) => r.title)).toEqual(['Vocalise № 1', 'Giselle - Pas de deux (1er Acte)', 'Rumores de la Caleta']);
   });
   it('separates composer, dates, instrument, licence, opus and the midi link', () => {
     const g = rows[1];
+    expect(g).toBeDefined();
     expect(g.composer).toBe('A. Adam');
     expect(g.dates).toBe('1803–1856');
     expect(g.instrument).toBe('Piano');
