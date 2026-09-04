@@ -1,5 +1,6 @@
 import type { Arrangement, Hand, Level, LevelId, Note, Section } from '../types';
 import { midiToName } from '../arrange/theory';
+import { findMotif, findShapes } from '../arrange/motifs';
 import type { PlayMode } from '../practice/player';
 
 export interface StepAction {
@@ -80,6 +81,10 @@ export function generateSteps(arr: Arrangement, levelId: LevelId, next?: NextSte
     action: { startBar: 0, endBar: arr.totalBars - 1, hands: 'both', tempoScale: 1, level: levelId, mode: 'listen' },
   });
 
+  // 2b. Building blocks: the melody's main motif and the left hand's few shapes, when they cover enough.
+  const blocks = buildingBlocks(arr, levelId);
+  if (blocks) steps.push(blocks);
+
   // 3. Right hand by section
   for (const s of sections) {
     const sn = notesIn(rh, 'rh', s, arr.beatsPerBar);
@@ -140,6 +145,47 @@ export function generateSteps(arr: Arrangement, levelId: LevelId, next?: NextSte
     });
   }
   return steps;
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  DECISION POINT — when is a pattern worth teaching before the sections?
+ *
+ *  The motif step appears when the melody's most repeated motif covers at least
+ *  `minMotifCoverage` of its onsets, or when the left hand is at most `maxShapes`
+ *  shapes covering `minShapeShare` of its onsets. Below that, section-by-section
+ *  practice is the better path and the step stays out.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+export const BLOCKS = { minMotifCoverage: 0.3, maxShapes: 3, minShapeShare: 0.8 };
+
+function buildingBlocks(arr: Arrangement, levelId: LevelId): Step | undefined {
+  const level = arr.levels[levelId];
+  const motif = findMotif(level.notes, arr.beatsPerBar);
+  const shapes = findShapes(level.notes, arr.beatsPerBar, 'lh', BLOCKS.maxShapes);
+  const shapeShare = shapes.reduce((s, x) => s + x.share, 0);
+  const useMotif = !!motif && motif.coverage >= BLOCKS.minMotifCoverage;
+  const useShapes = shapes.length > 0 && shapeShare >= BLOCKS.minShapeShare;
+  if (!useMotif && !useShapes) return undefined;
+  const parts: string[] = [];
+  if (useMotif && motif) {
+    const bars = motif.occurrences.map((o) => o.bar + 1);
+    const moved = motif.occurrences.filter((o) => o.transposed).length;
+    parts.push(`The melody's main motif is ${motif.letters} (${motif.length} notes). It appears ${motif.occurrences.length} times, in bar${bars.length === 1 ? '' : 's'} ${listBars(bars)}${moved ? `, ${moved} of them starting on a different note` : ''}, and covers ${Math.round(motif.coverage * 100)}% of the right hand.`);
+  }
+  if (useShapes) {
+    const desc = shapes.map((s) => `${s.name} (${Math.round(s.share * 100)}%)`);
+    parts.push(`The left hand is ${shapes.length === 1 ? 'one shape' : `${shapes.length} shapes`}: ${desc.join(', ')}. Learn ${shapes.length === 1 ? 'it' : 'them'} as hand positions and most bars are already known.`);
+  }
+  const action: StepAction | undefined = useMotif && motif
+    ? { startBar: motif.occurrences[0].bar, endBar: Math.floor((motif.occurrences[0].endBeat - 1e-6) / arr.beatsPerBar), hands: 'rh', tempoScale: 0.5, level: levelId, mode: 'learn' }
+    : undefined;
+  return { title: 'Learn the building blocks first', body: parts.join(' ') + (action ? ' Practise the motif once, slowly.' : ''), action };
+}
+
+function listBars(bars: number[]): string {
+  const shown = bars.slice(0, 6).join(', ');
+  return bars.length > 6 ? `${shown} and ${bars.length - 6} more` : shown.replace(/, (\d+)$/, ' and $1');
 }
 
 function uniqueChords(level: Level, lh: Note[]): { name: string; keys: string }[] {
