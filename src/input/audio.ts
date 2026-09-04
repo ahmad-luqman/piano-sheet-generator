@@ -74,20 +74,75 @@ export async function transcribeAudio(data: ArrayBuffer, opts: TranscribeOptions
   return { song: notesToSong(notes, bpm, opts.title, opts.source), notes: notes.length, bpm, cached: !!hit };
 }
 
-/** Record the microphone for `seconds`; `onTick` gets the seconds left. */
+/**
+ * Microphone recorder with a level meter: hum, sing, or play a song through the speakers.
+ * `start()` opens the microphone; `stop()` resolves the recording; it stops itself at
+ * `maxSeconds`. `onTick` fires four times a second with the elapsed time and the level.
+ */
+export class Recorder {
+  private stream: MediaStream | null = null;
+  private rec: MediaRecorder | null = null;
+  private chunks: Blob[] = [];
+  private ctx: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private timer = 0;
+  private startedAt = 0;
+  private finished: Promise<ArrayBuffer> | null = null;
+  private resolveFinished: ((b: ArrayBuffer) => void) | null = null;
+
+  constructor(private maxSeconds = 300, private onTick?: (elapsed: number, level: number) => void) {}
+
+  get recording(): boolean { return this.rec?.state === 'recording'; }
+
+  async start(): Promise<void> {
+    if (this.rec) return;
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true } });
+    this.ctx = new AudioContext();
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 512;
+    this.ctx.createMediaStreamSource(this.stream).connect(this.analyser);
+    this.rec = new MediaRecorder(this.stream);
+    this.chunks = [];
+    this.rec.ondataavailable = (e) => { if (e.data.size) this.chunks.push(e.data); };
+    this.finished = new Promise<ArrayBuffer>((resolve) => { this.resolveFinished = resolve; });
+    this.rec.onstop = () => { void new Blob(this.chunks, { type: this.rec?.mimeType }).arrayBuffer().then((b) => this.resolveFinished?.(b)); };
+    this.rec.start(1000);
+    this.startedAt = performance.now();
+    this.timer = window.setInterval(() => {
+      const elapsed = (performance.now() - this.startedAt) / 1000;
+      this.onTick?.(elapsed, this.level());
+      if (elapsed >= this.maxSeconds) void this.stop();
+    }, 250);
+  }
+
+  /** 0..1 loudness of the last frame. */
+  level(): number {
+    if (!this.analyser) return 0;
+    const buf = new Uint8Array(this.analyser.fftSize);
+    this.analyser.getByteTimeDomainData(buf);
+    let sum = 0;
+    for (const v of buf) { const x = (v - 128) / 128; sum += x * x; }
+    return Math.min(1, Math.sqrt(sum / buf.length) * 4);
+  }
+
+  async stop(): Promise<ArrayBuffer> {
+    if (!this.rec || !this.finished) throw new Error('Not recording.');
+    clearInterval(this.timer);
+    if (this.rec.state !== 'inactive') this.rec.stop();
+    const data = await this.finished;
+    for (const t of this.stream?.getTracks() ?? []) t.stop();
+    void this.ctx?.close();
+    this.rec = null; this.stream = null; this.ctx = null; this.analyser = null; this.finished = null;
+    return data;
+  }
+}
+
+/** Record the microphone for `seconds`; `onTick` gets the seconds left. Kept for callers that want a fixed take. */
 export async function recordMicrophone(seconds: number, onTick?: (left: number) => void): Promise<ArrayBuffer> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true } });
-  try {
-    const rec = new MediaRecorder(stream);
-    const chunks: Blob[] = [];
-    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-    const done = new Promise<void>((resolve) => { rec.onstop = () => resolve(); });
-    rec.start();
-    for (let left = seconds; left > 0; left--) { onTick?.(left); await new Promise((r) => setTimeout(r, 1000)); }
-    rec.stop();
-    await done;
-    return await new Blob(chunks, { type: rec.mimeType }).arrayBuffer();
-  } finally { for (const t of stream.getTracks()) t.stop(); }
+  const rec = new Recorder(seconds, (elapsed) => onTick?.(Math.max(0, Math.ceil(seconds - elapsed))));
+  await rec.start();
+  await new Promise((r) => setTimeout(r, seconds * 1000 + 100));
+  return rec.recording ? rec.stop() : rec.stop();
 }
 
 // ───────────────────────── cache ─────────────────────────

@@ -33,11 +33,13 @@ import { dailySet, ProgressStore, recordAttempt, scaffoldLevel, songKey, type So
 import { describeGhost, ghostPlan } from '../practice/ghost';
 import { handsNeeded, nextAction, type NextAction } from '../practice/next';
 import { ProgressPanel } from './progress';
-import { chooseAccompaniment, diagnoseErrors, enrichSteps, explainChord, explainVersions, getApiKey, readSheetPhoto, recommendSongs, rhythmWords, setApiKey, understandQuery, writeJournal, type RecommendCandidate } from '../llm/claude';
+import { chooseAccompaniment, diagnoseErrors, enrichSteps, explainChord, explainVersions, findChordChart, getApiKey, readSheetPhoto, recommendSongs, rhythmWords, setApiKey, understandQuery, writeJournal, type RecommendCandidate } from '../llm/claude';
+import { chartToSong, chartVocabulary, parseChart, type Chart } from '../input/chart';
+import type { ChordVocabulary } from '../arrange/chords';
 import { candidateQuery, lookupCanonical, sameAsQuery, SOURCE_LABEL, type QueryCandidate } from '../search/canonical';
 import { looksLikeProse, resultsAreWeak } from '../search/intent';
 import { normalizeQuery } from '../search/normalize';
-import { recordMicrophone, transcribeAudio, transcribeSamples, type Progress } from '../input/audio';
+import { Recorder, transcribeAudio, transcribeSamples, type Progress } from '../input/audio';
 
 const $ = <T extends HTMLElement>(sel: string): T => {
   const el = document.querySelector<T>(sel);
@@ -73,6 +75,9 @@ export class App {
   private lastFeedbackTimers = new Map<number, number>();
   private store = new ProgressStore();
   private constraints: HandConstraints = loadConstraints();
+  /** Chords the arrangement must use: as given when the song is a chart, as a vocabulary when a chart constrains a transcription. */
+  private chartChords: Chart['chords'] | null = null;
+  private chordVocabulary: ChordVocabulary | undefined;
   private ghostOn = readFlag('psg.ghost');
   /** Rhythm words per section index for the current song and stage; re-applied whenever the steps regenerate. */
   private rhythmWords = new Map<number, string>();
@@ -157,6 +162,10 @@ export class App {
       (e.target as HTMLInputElement).value = '';
     });
     $('#btn-url').addEventListener('click', () => $<HTMLDialogElement>('#dlg-url').showModal());
+    $('#btn-chords').addEventListener('click', () => $<HTMLDialogElement>('#dlg-chords').showModal());
+    $<HTMLDialogElement>('#dlg-chords').addEventListener('close', () => { if ($<HTMLDialogElement>('#dlg-chords').returnValue === 'play') this.playAlong(); });
+    $('#btn-chart-find').addEventListener('click', () => void this.findChart());
+    $('#btn-chart-apply').addEventListener('click', () => this.applyChart());
     $<HTMLDialogElement>('#dlg-url').addEventListener('close', () => {
       const dlg = $<HTMLDialogElement>('#dlg-url');
       if (dlg.returnValue !== 'ok') return;
@@ -367,15 +376,35 @@ export class App {
     catch (err) { this.toast(`Could not transcribe: ${msg(err)}`, true); }
   }
 
+  private recorder: Recorder | null = null;
+
+  /** One click starts recording (hum, sing, or play the song through the speakers), the next stops it and transcribes. */
   private async hum(): Promise<void> {
     const btn = $<HTMLButtonElement>('#btn-hum');
-    btn.disabled = true;
+    const status = $('#status');
+    if (this.recorder) {
+      const rec = this.recorder; this.recorder = null;
+      btn.disabled = true; btn.textContent = 'Hum it';
+      try {
+        const data = await rec.stop();
+        status.textContent = '';
+        await this.transcribe(data, { title: `Recording ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, source: 'hum' });
+      } catch (err) { this.toast(`Could not record: ${msg(err)}`, true); }
+      finally { btn.disabled = false; btn.textContent = 'Hum it'; }
+      return;
+    }
+    const rec = new Recorder(RECORD_MAX_SECONDS, (elapsed, level) => {
+      const m = Math.floor(elapsed / 60), s = Math.floor(elapsed % 60);
+      status.textContent = `Recording ${m}:${String(s).padStart(2, '0')} ${meter(level)}${level < 0.02 ? ' · hearing nothing yet' : ''} · click Stop when the tune is done (${Math.floor(RECORD_MAX_SECONDS / 60)} min max)`;
+      if (elapsed >= RECORD_MAX_SECONDS && this.recorder === rec) void this.hum();
+    });
     try {
       this.player.pause();
-      const data = await recordMicrophone(10, (left) => { $('#status').textContent = `Recording… ${left} s left. Hum or sing the tune.`; btn.textContent = `● ${left}`; });
-      await this.transcribe(data, { title: `Hummed melody ${new Date().toLocaleTimeString()}`, source: 'hum' });
+      await rec.start();
+      this.recorder = rec;
+      btn.textContent = '■ Stop';
+      this.toast('Recording. Hum, sing, or play the song through your speakers, then click Stop.');
     } catch (err) { this.toast(`Could not record: ${msg(err)}`, true); }
-    finally { btn.disabled = false; btn.textContent = 'Hum it'; }
   }
 
   /** One card per song; uploads of the same title sit behind a "N versions" toggle. */
@@ -476,9 +505,11 @@ export class App {
     } catch (err) { this.toast(`Could not load: ${msg(err)}`, true); }
   }
 
-  private loadSong(song: Song): void {
+  private loadSong(song: Song, chart?: Chart): void {
     this.player.pause();
     this.rhythmWords.clear();
+    this.chartChords = chart ? chart.chords : null;
+    this.chordVocabulary = undefined;
     this.song = song;
     if (song.notes.length === 0) { this.toast('That file has no notes.', true); return; }
     const sel = $<HTMLSelectElement>('#melody-track');
@@ -496,7 +527,7 @@ export class App {
   private arrange(melodyTrack?: number): void {
     if (!this.song) return;
     try {
-      this.arr = buildArrangement(this.song, { melodyTrack, transposeEarly: this.transposeEarly, easeHardSections: this.easeHard, sectionPatterns: this.sectionPatterns, constraints: this.constraints });
+      this.arr = buildArrangement(this.song, { melodyTrack, transposeEarly: this.transposeEarly, easeHardSections: this.easeHard, sectionPatterns: this.sectionPatterns, constraints: this.constraints, chords: this.chartChords ?? undefined, chordVocabulary: this.chordVocabulary });
     } catch (err) { this.toast(`Could not arrange: ${msg(err)}`, true); return; }
     $<HTMLSelectElement>('#melody-track').value = String(this.arr.melodyTrack);
     $('#song-title').textContent = this.arr.title;
@@ -630,6 +661,53 @@ export class App {
       this.toast(`Words added for ${got.length} of ${requests.length} sections.`);
     } catch (err) { this.toast(`Could not ask Claude: ${msg(err)}`, true); }
     finally { btn.disabled = false; btn.textContent = '✨ Words'; }
+  }
+
+  // ───────────────────────── chord charts ─────────────────────────
+
+  private readChart(): Chart | undefined {
+    const text = $<HTMLTextAreaElement>('#chart-text').value;
+    if (!text.trim()) { this.toast('Paste a chord chart first, or let Claude find one.', true); return undefined; }
+    try { return parseChart(text); }
+    catch (err) { this.toast(`Chart problem: ${msg(err)}`, true); return undefined; }
+  }
+
+  /** Left-hand chords and right-hand chord tones from the chart alone. */
+  private playAlong(): void {
+    const chart = this.readChart();
+    if (!chart) return;
+    this.loadSong(chartToSong(chart), chart);
+    this.toast(`Play-along from the chart: ${chart.totalBars} bars, ${chartVocabulary(chart).length} chords. The tune itself has to come from a recording or a score.`);
+  }
+
+  /** Re-detect the loaded song's chords using only the chart's chords: cleaner harmony on a noisy transcription. */
+  private applyChart(): void {
+    const chart = this.readChart();
+    if (!chart || !this.song) return;
+    if (this.song.source === 'chart') { this.toast('This song already is the chart.'); return; }
+    this.chartChords = null;
+    this.chordVocabulary = chartVocabulary(chart);
+    this.arrange(this.arr?.melodyTrack);
+    $<HTMLDialogElement>('#dlg-chords').close();
+    this.toast(`Chords limited to the ${this.chordVocabulary.length} in the chart. Open “Chords” again to change that.`);
+  }
+
+  /** Claude searches chord sites for the title in the search box (or the loaded song) and writes the chart into the box. */
+  private async findChart(): Promise<void> {
+    if (!getApiKey()) { this.toast('Add your Anthropic API key in Settings (⚙) to let Claude find a chart.', true); $<HTMLDialogElement>('#dlg-settings').showModal(); return; }
+    const typed = $<HTMLInputElement>('#search-input').value.trim();
+    const raw = typed || this.arr?.title || '';
+    if (!raw) { this.toast('Type the song in the search box first.', true); return; }
+    const [title, artist] = raw.split(/\s+[—-]\s+/);
+    const btn = $<HTMLButtonElement>('#btn-chart-find');
+    btn.disabled = true; btn.textContent = '✨ Searching…';
+    try {
+      const { chart, text, sources } = await findChordChart(title, artist);
+      $<HTMLTextAreaElement>('#chart-text').value = text;
+      $('#chart-sources').innerHTML = sources.length ? `Sources: ${sources.slice(0, 6).map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(hostOf(u))}</a>`).join(', ')}` : '';
+      this.toast(`Found a chart: ${chart.totalBars} bars, ${chartVocabulary(chart).length} chords, ${chart.bpm} bpm.`);
+    } catch (err) { this.toast(`Could not find a chart: ${msg(err)}`, true); }
+    finally { btn.disabled = false; btn.textContent = '✨ Find chart for the search box title'; }
   }
 
   /**
@@ -1050,6 +1128,9 @@ async function readScore(data: ArrayBuffer, name: string, source: string): Promi
   const title = name.replace(/\.(midi?|xml|musicxml|mxl)$/i, '');
   return sniffed.kind === 'midi' ? parseMidi(data, title, source) : parseMusicXml(sniffed.xml!, title);
 }
+const RECORD_MAX_SECONDS = 300;
+function meter(level: number): string { const n = Math.round(level * 8); return '▁▂▃▄▅▆▇█'.slice(0, Math.max(1, n)).padEnd(8, '·'); }
+function hostOf(u: string): string { try { return new URL(u).hostname; } catch { return u; } }
 function msg(e: unknown): string { return e instanceof Error ? e.message : String(e); }
 function fmtSeconds(s: number): string { return s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : 'the track'; }
 function readFlag(key: string): boolean { try { return localStorage.getItem(key) === '1'; } catch { return false; } }

@@ -1,5 +1,5 @@
-import type { Arrangement, Song } from '../types';
-import { detectChords } from './chords';
+import type { Arrangement, ChordQuality, Song } from '../types';
+import { chordName, detectChords, voiceChord, type ChordVocabulary } from './chords';
 import { suggestFingers } from './fingers';
 import { buildLevels } from './levels';
 import { extractMelody, pickMelodyTrack } from './melody';
@@ -16,13 +16,19 @@ export interface ArrangeOptions {
   easeHardSections?: boolean; // show much harder sections one stage lower (default true)
   sectionPatterns?: SectionPattern[]; // stage 5 left-hand texture per section
   constraints?: HandConstraints; // keyboard size and hand span; default 88 keys, an octave
+  /** Chords to use as given (a chord chart), instead of detecting them. */
+  chords?: { startBeat: number; durationBeats: number; root: number; quality: ChordQuality }[];
+  /** Restrict detection to these chords (a chart's vocabulary) when the notes are noisy. */
+  chordVocabulary?: ChordVocabulary;
 }
 
 export function buildArrangement(song: Song, opts: ArrangeOptions = {}): Arrangement {
   const key = detectKey(song.notes);
   const melodyTrack = opts.melodyTrack ?? pickMelodyTrack(song);
   const melody = extractMelody(song, melodyTrack);
-  const chords = detectChords(song.notes, song.beatsPerBar, song.totalBeats, key);
+  const chords = opts.chords?.length
+    ? opts.chords.map((c) => ({ ...c, name: chordName(c.root, c.quality, key), pitches: voiceChord(c.root, c.quality), confidence: 1 }))
+    : detectChords(song.notes, song.beatsPerBar, song.totalBeats, key, opts.chordVocabulary);
   const levels = buildLevels(song, melody, chords, key, melodyTrack, { transposeEarly: opts.transposeEarly, sectionPatterns: opts.sectionPatterns });
   const totalBars = Math.max(1, Math.ceil(song.totalBeats / song.beatsPerBar));
   const sections = detectSections(levels[1].notes, totalBars, song.beatsPerBar);

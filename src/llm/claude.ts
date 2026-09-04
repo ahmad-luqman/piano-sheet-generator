@@ -13,6 +13,7 @@ import { METRIC_WORDS } from '../practice/skills';
 import { METRIC_KEYS } from '../arrange/difficulty';
 import { songFromTranscription, validMnemonics, validPicks, type Mnemonic, type MnemonicRequest, type Pick, type SheetTranscription } from './validate';
 import type { Song } from '../types';
+import { extractChart, parseChart, type Chart } from '../input/chart';
 
 /**
  * Every call here follows the same rules: the user's own key, opt-in; a rule-based
@@ -428,4 +429,39 @@ export async function readSheetPhoto(file: { data: string; mediaType: 'image/jpe
   const parsed = JSON.parse(textOf(res)) as SheetTranscription;
   const song = songFromTranscription(parsed);
   return { song, notes: parsed.notes?.trim() || undefined, transcription: parsed };
+}
+
+// ───────────────────────── chord chart from the web (Phase G) ─────────────────────────
+
+const CHART_FORMAT = 'Format, exactly:\n```chart\ntitle: <title>\nartist: <artist>\nkey: <e.g. D minor>\ntempo: <bpm>\ntime: <e.g. 4/4>\n\n[Intro]\nDm | Am | Dm | Am\n[Verse]\nDm | C | Am Bb | Dm\n```\n' +
+  'One bar per cell between | signs; several chords in one bar share it; % repeats the previous bar; N.C. for no chord. ' +
+  'Only chord symbols inside the fence, never lyrics or comments. Use only chords that the sources show, in the order and bar lengths they give; ' +
+  'when sources disagree on the key or tempo, take the most common. After the fence, list the URLs you used, one per line.';
+
+/**
+ * Find a published chord chart for a song and write it in the chart format; code parses and
+ * validates it, and voices every chord itself. The model supplies symbols and structure, which
+ * is a pick from what the sources show, never pitches.
+ */
+export async function findChordChart(title: string, artist?: string): Promise<{ chart: Chart; text: string; sources: string[] }> {
+  const c = client();
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 2500,
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
+    output_config: { effort: 'medium' },
+    system: 'You find chord charts for songs a beginner wants to play on piano. Search chord sites (Ultimate Guitar, Chordify, ChordU, E-Chords and similar), then write the chart. ' + CHART_FORMAT,
+    messages: [{ role: 'user', content: `Chord chart for “${title}”${artist ? ` by ${artist}` : ''}.` }],
+  });
+  checkRefusal(res);
+  const text = textOf(res);
+  const sources = new Set<string>();
+  for (const b of res.content) {
+    if (b.type === 'text') for (const cit of (b.citations ?? []) as { type: string; url?: string }[]) if (cit.url) sources.add(cit.url);
+  }
+  for (const m of text.matchAll(/https?:\/\/[^\s)>\]]+/g)) sources.add(m[0]);
+  const chart = parseChart(extractChart(text));
+  if (!chart.title) chart.title = title;
+  if (!chart.artist && artist) chart.artist = artist;
+  return { chart, text: extractChart(text), sources: [...sources] };
 }

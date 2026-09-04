@@ -30,11 +30,14 @@ function histogram(notes: RawNote[], w: Window): { hist: number[]; bass: number 
   return { hist, bass, total };
 }
 
-function bestChord(hist: number[], bass: number | null, total: number): { root: number; quality: ChordQuality; suffix: string; score: number } | null {
+export type ChordVocabulary = { root: number; quality: ChordQuality }[];
+
+function bestChord(hist: number[], bass: number | null, total: number, allowed?: ChordVocabulary): { root: number; quality: ChordQuality; suffix: string; score: number } | null {
   if (total <= 0) return null;
   let best: { root: number; quality: ChordQuality; suffix: string; score: number } | null = null;
   for (let root = 0; root < 12; root++) {
     for (const t of TEMPLATES) {
+      if (allowed && !allowed.some((a) => a.root === root && a.quality === t.quality)) continue;
       let inside = 0;
       for (const iv of t.intervals) inside += hist[(root + iv) % 12];
       const outside = total - inside;
@@ -69,7 +72,7 @@ export function voiceChord(root: number, quality: ChordQuality, low = 48, maxNot
  * Detect one chord per bar, splitting into half bars when the harmony clearly changes mid-bar.
  * Returns chords covering the whole piece; low-confidence windows inherit the previous chord.
  */
-export function detectChords(notes: RawNote[], beatsPerBar: number, totalBeats: number, key: KeyInfo): Chord[] {
+export function detectChords(notes: RawNote[], beatsPerBar: number, totalBeats: number, key: KeyInfo, allowed?: ChordVocabulary): Chord[] {
   const chords: Chord[] = [];
   const bars = Math.max(1, Math.ceil(totalBeats / beatsPerBar));
   let prev: { root: number; quality: ChordQuality } | null = null;
@@ -77,13 +80,13 @@ export function detectChords(notes: RawNote[], beatsPerBar: number, totalBeats: 
   for (let b = 0; b < bars; b++) {
     const start = b * beatsPerBar;
     const whole = histogram(notes, { start, end: start + beatsPerBar });
-    const wholeBest = bestChord(whole.hist, whole.bass, whole.total);
+    const wholeBest = bestChord(whole.hist, whole.bass, whole.total, allowed);
 
     const half = beatsPerBar / 2;
     const h1 = histogram(notes, { start, end: start + half });
     const h2 = histogram(notes, { start: start + half, end: start + beatsPerBar });
-    const b1 = bestChord(h1.hist, h1.bass, h1.total);
-    const b2 = bestChord(h2.hist, h2.bass, h2.total);
+    const b1 = bestChord(h1.hist, h1.bass, h1.total, allowed);
+    const b2 = bestChord(h2.hist, h2.bass, h2.total, allowed);
 
     const splits: { start: number; dur: number; best: typeof wholeBest }[] = [];
     const clearlyDifferent = b1 && b2 && b1.root !== b2.root && b1.score > 0.55 && b2.score > 0.55
@@ -103,7 +106,7 @@ export function detectChords(notes: RawNote[], beatsPerBar: number, totalBeats: 
       } else if (s.best) {
         root = s.best.root; quality = s.best.quality; confidence = Math.max(0, s.best.score);
       } else {
-        root = key.tonic; quality = key.mode === 'major' ? 'maj' : 'min'; confidence = 0.1;
+        root = allowed?.[0]?.root ?? key.tonic; quality = allowed?.[0]?.quality ?? (key.mode === 'major' ? 'maj' : 'min'); confidence = 0.1;
       }
       const last = chords[chords.length - 1];
       if (last && last.root === root && last.quality === quality) {

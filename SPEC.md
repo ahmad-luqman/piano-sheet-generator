@@ -161,7 +161,7 @@ src/
 | Question | Decision |
 |---|---|
 | Main beginner view | Both stacked: letter sheet on top, 3D piano with falling notes below. |
-| LLM usage | Optional. User pastes their own Anthropic API key in Settings (stored in localStorage only). Used to (a) enrich how-to-play steps with plain-language coaching, (b) name the song when the query reads as a description and MIDI search finds little (iTunes fills that slot without a key), (c) pick what to play next from a code-built shortlist, (d) write rhythm words checked one syllable per note, and (e) read a sheet-music photo into the note DSL, which the parser validates. Rule-based generation is always the fallback and the default. Browser calls go directly to the Claude API with the direct-browser-access header. |
+| LLM usage | Optional. User pastes their own Anthropic API key in Settings (stored in localStorage only). Used to (a) enrich how-to-play steps with plain-language coaching, (b) name the song when the query reads as a description and MIDI search finds little (iTunes fills that slot without a key), (c) pick what to play next from a code-built shortlist, (d) write rhythm words checked one syllable per note, (e) read a sheet-music photo into the note DSL, which the parser validates, and (f) find a published chord chart with web search and write it in the chart format, which the chart parser validates. Rule-based generation is always the fallback and the default. Browser calls go directly to the Claude API with the direct-browser-access header. |
 | Inputs in v1 | Computer keyboard, mouse/touch, and Web MIDI hardware keyboards (device picker). |
 | Hosting | Static site. `vite build` output deploys to GitHub Pages or any static host. No backend. |
 

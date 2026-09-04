@@ -58,9 +58,10 @@ if (btn) {
 }
 // 4. Hum: Chrome's fake microphone emits a tone; the recording must decode, transcribe and load.
 await page.evaluate(() => { document.querySelector('#results').hidden = true; });
-await page.evaluate(() => void window.__app.hum());
-await wait(13000);
-for (let i = 0; i < 20; i++) { await wait(1500); const t = await page.$eval('#song-title', (e) => e.textContent); if (/Hummed/.test(t)) break; }
+await page.click('#btn-hum'); await wait(4000);
+report.recording = { button: await page.$eval('#btn-hum', (e) => e.textContent), status: await page.$eval('#status', (e) => e.textContent) };
+await page.click('#btn-hum');
+for (let i = 0; i < 30; i++) { await wait(1500); const t = await page.$eval('#song-title', (e) => e.textContent); if (/Recording/.test(t)) break; }
 report.hum = { title: await page.$eval('#song-title', (e) => e.textContent), toast: await page.$eval('#toast', (e) => e.textContent), status: await page.$eval('#status', (e) => e.textContent) };
 console.log(JSON.stringify(report, null, 1));
 await browser.close();

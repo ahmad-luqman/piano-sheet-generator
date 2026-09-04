@@ -13,8 +13,12 @@ is one click away for those who can.
   solo-piano works from the Mutopia Project (Beethoven, Czerny, Chopin, Mozart, Burgmüller, Joplin, Bach, …) that work offline.
 - **Any song from its sound**: when no MIDI exists (most Urdu, Pakistani and Bollywood songs), the iTunes hit's 30-second
   preview is transcribed in your browser (Spotify's basic-pitch on TensorFlow.js, loaded on first use) and arranged like
-  any MIDI. The same pipeline takes an **audio file** from your computer or ten seconds **hummed** into the microphone.
+  any MIDI. The same pipeline takes an **audio file** from your computer or a **microphone recording** of up to five minutes: hum, sing, or play the song through
+  the speakers, with a level meter while it records.
   Queries in Urdu, Arabic or Devanagari script go straight to the title lookup.
+- **Chord charts**: paste a chart (`Dm | C | Am | Dm`, sections, repeats) or let Claude find a published one on the web,
+  and the app builds a play-along with left-hand chords and right-hand chord tones. A chart can also constrain the
+  chords of a transcribed song to the ones it lists. The melody still has to come from a recording, a score or a MIDI.
 - **Did you mean**: a misspelling or a description ("yesturday beetles", "that sad piano song from Interstellar") is resolved to real
   titles through iTunes Search, with MusicBrainz as the fallback, or through Claude when you add a key and the query reads as a
   description. No result plus a confident candidate hops once to that title and says so above the results.

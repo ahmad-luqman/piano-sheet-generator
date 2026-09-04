@@ -19,8 +19,9 @@
         <label class="btn" title="Open a MIDI, MusicXML or .mxl score from your computer (MuseScore, Sibelius, Finale, Dorico exports)">Open score<input id="file-input" type="file" accept=".mid,.midi,.xml,.musicxml,.mxl,audio/midi,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml" hidden /></label>
         <label class="btn" title="Photograph printed sheet music, one or several pages in order; Claude reads them (needs an API key in Settings)">✨ Sheet photos<input id="photo-input" type="file" accept="image/*" multiple hidden /></label>
         <label class="btn" title="Transcribe an audio file (mp3, m4a, wav…) in your browser">Audio file<input id="audio-input" type="file" accept="audio/*" hidden /></label>
-        <button id="btn-hum" class="btn" title="Hum or sing for ten seconds; the melody is transcribed in your browser">Hum it</button>
+        <button id="btn-hum" class="btn" title="Record the microphone, up to five minutes: hum, sing, or play the song through your speakers. Click again to stop; the recording is transcribed in your browser.">Hum it</button>
         <button id="btn-url" class="btn" title="Load a MIDI file from a URL">MIDI URL</button>
+        <button id="btn-chords" class="btn" title="Paste a chord chart, or let Claude find one on the web, and play along">Chords</button>
         <button id="btn-settings" class="btn icon" title="Settings" aria-label="Settings">⚙</button>
       </div>
     </header>
@@ -140,6 +141,21 @@
         <label>Hand span <select id="opt-span" class="select"></select></label>
         <p class="muted small">Notes outside your keyboard move by octaves; chords wider than your span are revoiced. Applied to every stage.</p>
         <menu><button class="btn primary" value="ok">Done</button></menu>
+      </form>
+    </dialog>
+
+    <dialog id="dlg-chords" class="dialog">
+      <form method="dialog">
+        <h2>Chord chart</h2>
+        <p class="muted small">Bars between <code>|</code> signs, sections in brackets, <code>x2</code> to repeat a line, <code>%</code> to repeat a bar. Headers: title, artist, key, tempo, time. The chart becomes a play-along: left-hand chords, right-hand chord tones. The melody has to come from a recording, a score or a MIDI.</p>
+        <textarea id="chart-text" rows="12" spellcheck="false" placeholder="title: Dil Dil Pakistan&#10;artist: Vital Signs&#10;key: D minor&#10;tempo: 87&#10;time: 4/4&#10;&#10;[Intro]&#10;Dm | Am | Dm | Am   x2&#10;Bb | C&#10;[Chorus]&#10;Dm | Bb | C | Am Bb C"></textarea>
+        <div id="chart-sources" class="muted small"></div>
+        <menu>
+          <button type="button" id="btn-chart-find" class="btn" title="Claude searches chord sites for this title (needs an API key in Settings)">✨ Find chart for the search box title</button>
+          <button type="button" id="btn-chart-apply" class="btn" title="Re-detect the loaded song's chords using only the chords in this chart">Use these chords for the loaded song</button>
+          <button class="btn" value="cancel">Close</button>
+          <button class="btn primary" value="play">Build play-along</button>
+        </menu>
       </form>
     </dialog>
 

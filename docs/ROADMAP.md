@@ -275,11 +275,16 @@ first use only.
 2. **Preview cards in search.** Whenever the title lookup runs, the iTunes candidates with a
    preview become cards under the results: "Afreen Afreen · Atif Aslam, 30-second preview" with a
    Transcribe button. The song loads with source `preview`, then arranges like any MIDI.
-3. **Audio file and hum.** An audio upload (the full song from the learner's computer) and a
-   ten-second microphone recording share the pipeline; the hum path is melody-only by nature.
+3. **Audio file and microphone.** An audio upload (the full song from the learner's computer) and a
+   microphone recording of up to five minutes, with a level meter, share the pipeline: hum, sing,
+   or play the song through the speakers.
 4. **Non-Latin queries.** A query in Urdu, Arabic, Devanagari or any script the normalizer folds to
    nothing skips the catalog and goes straight to the lookup instead of listing every built-in song.
-5. Checks: a headless run transcribes a melody synthesized in the page (Twinkle through an
+5. **Chord charts** (`src/input/chart.ts`). Charts exist for nearly every song in every language. A pasted
+   chart, or one Claude finds with web search and writes in the chart format, is parsed and validated by
+   code and becomes a play-along (left hand blocks, right hand chord tones), or constrains chord detection
+   on a transcription to the chart's vocabulary. The model returns symbols and structure, never pitches.
+6. Checks: a headless run transcribes a melody synthesized in the page (Twinkle through an
    oscillator) and compares pitches; a second run transcribes a live iTunes preview and loads it.
 
 Known limits, by design: thirty seconds of a song, not the whole piece; a transcription of a full
